@@ -401,7 +401,9 @@ function renderTables(main) {
             <div class="table-name">${t.name}</div>
             <div class="table-meta">${tableSummary(t)}</div>
           </div>
-          <span class="chevron">›</span>
+          <button class="btn-delete-row" data-id="${t.id}" title="Delete">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4h6v2"/></svg>
+          </button>
         </div>`).join('') +
       `</div>`;
   }
@@ -409,6 +411,17 @@ function renderTables(main) {
   main.innerHTML = html
     + `<div class="list-bottom-pad"></div>`
     + `<button class="fab" id="btn-new" title="New table">+</button>`;
+
+  main.querySelectorAll('.btn-delete-row').forEach(btn => {
+    btn.addEventListener('click', e => {
+      e.stopPropagation();
+      const table = db.getTable(btn.dataset.id);
+      if (table && confirm(`Delete "${table.name}"?`)) {
+        db.deleteTable(btn.dataset.id);
+        renderTables(main);
+      }
+    });
+  });
 
   main.querySelectorAll('.card-row').forEach(row => {
     // tap → start session
