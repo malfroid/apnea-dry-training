@@ -54,11 +54,31 @@ function fmtDate(iso) {
 // ─────────────────────────────────────────────
 // Speech
 // ─────────────────────────────────────────────
+let preferredVoice = null;
+
+function loadVoice() {
+  const voices = speechSynthesis.getVoices();
+  if (!voices.length) return;
+  const en = voices.filter(v => v.lang.startsWith('en'));
+  // prefer Natural/Enhanced voices (macOS/iOS system voices)
+  preferredVoice = en.find(v => /natural|enhanced/i.test(v.name))
+    || en.find(v => v.localService)
+    || en[0]
+    || voices[0]
+    || null;
+}
+
+if (window.speechSynthesis) {
+  loadVoice();
+  speechSynthesis.addEventListener('voiceschanged', loadVoice);
+}
+
 function speak(text) {
   if (!window.speechSynthesis) return;
   window.speechSynthesis.cancel();
   const u = new SpeechSynthesisUtterance(text);
   u.rate = 0.92;
+  if (preferredVoice) u.voice = preferredVoice;
   window.speechSynthesis.speak(u);
 }
 
@@ -173,7 +193,7 @@ class SessionEngine {
         if (this.paused) return;
         this.timeLeft--;
         const t = this.timeLeft;
-        if (t > 0 && t <= 10) speak(String(t));
+        if ([10, 5, 3, 2, 1].includes(t)) speak(String(t));
         this.onTick(this._state());
         if (t <= 0) {
           clearInterval(this.timer);
