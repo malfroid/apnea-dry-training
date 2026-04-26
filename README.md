@@ -1,4 +1,4 @@
-# Apnea Trainer
+# Apnea Dry Training
 
 A minimal local-first web app for apnea dry training.
 
@@ -31,4 +31,4 @@ No build step. No dependencies.
 
 - Tap a table to start a session. Long-press to edit.
 - During a Wonka session, tap **First Contraction** when you feel the first diaphragm spasm.
-- Voice announcements use the Web Speech API — allow audio in your browser.
+- Voice announcements use the Audio API — allow audio in your browser.
