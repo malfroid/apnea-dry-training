@@ -433,7 +433,10 @@ select.form-input {
     margin-bottom: 32px;
 }
 
-.btn-contraction {
+.btn-contraction:not([hidden]) {
+    display: flex;
+    align-items: center;
+    justify-content: center;
     width: 100%;
     max-width: 300px;
     background: var(--hold);
@@ -448,14 +451,11 @@ select.form-input {
     text-transform: uppercase;
     margin-bottom: 12px;
     box-shadow: 0 4px 20px rgba(224, 85, 85, 0.4);
-    display: flex;
-    align-items: center;
-    justify-content: center;
 }
 .btn-contraction:active {
     transform: scale(0.97);
 }
-.btn-ready {
+.btn-ready:not([hidden]) {
     background: var(--prep);
     box-shadow: 0 4px 20px rgba(85, 153, 224, 0.4);
 }
@@ -465,12 +465,20 @@ select.form-input {
     gap: 12px;
     width: 100%;
     max-width: 300px;
-    margin-top: 0;
 }
 .session-controls .btn {
     flex: 1;
     padding: 14px;
     font-size: 0.9rem;
+    height: 48px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+.btn-secondary {
+    background: var(--surface2);
+    color: var(--text);
+    border: 1px solid transparent;
 }
 
 /* ── Session complete ── */
