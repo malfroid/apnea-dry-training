@@ -91,11 +91,9 @@ const audioExt =
 
 const CLIP_KEYS = [
   "ready",
-  "prep",
   "rest",
   "after_contraction",
   "one_breath",
-  "recovery",
   "complete",
   "tap_contraction",
   "n1",
@@ -161,9 +159,6 @@ class SessionEngine {
     const phases = [];
 
     if (type === "wonka") {
-      if (p.prepTime > 0)
-        phases.push({ kind: "prep", dur: p.prepTime, round: 0 });
-
       for (let i = 0; i < p.breathholds; i++) {
         phases.push({ kind: "hold", dur: null, round: i + 1, countUp: true });
         phases.push({
@@ -179,13 +174,6 @@ class SessionEngine {
             userTriggered: true,
           });
       }
-      // single cooldown after all rounds
-      if (p.cooldownTime > 0)
-        phases.push({
-          kind: "cooldown",
-          dur: p.cooldownTime,
-          round: p.breathholds,
-        });
     } else {
       const rounds = this._buildRounds();
       phases.push({ kind: "ready", dur: 5, round: 0 });
@@ -627,16 +615,8 @@ function renderEdit(main, id) {
           <input class="form-input" id="f-breathholds" type="number" min="1" max="30" value="${p.breathholds || 5}">
         </div>
         <div class="form-group">
-          <label class="form-label">Initial Relaxation</label>
-          ${timePairHtml("f-prepTime", p.prepTime ?? 120)}
-        </div>
-        <div class="form-group">
           <label class="form-label">Hold After 1st Contraction</label>
           ${timePairHtml("f-countdownAfterContraction", p.countdownAfterContraction ?? 30)}
-        </div>
-        <div class="form-group">
-          <label class="form-label">Final Cooldown Time (after last round)</label>
-          ${timePairHtml("f-cooldownTime", p.cooldownTime ?? 120)}
         </div>`;
     } else if (t === "custom") {
       const rounds =
@@ -733,9 +713,7 @@ function renderEdit(main, id) {
       params = {
         breathholds:
           parseInt(document.getElementById("f-breathholds").value) || 5,
-        prepTime: getTimePair("f-prepTime"),
         countdownAfterContraction: getTimePair("f-countdownAfterContraction"),
-        cooldownTime: getTimePair("f-cooldownTime"),
       };
     } else {
       params = { rounds: readCustomRounds() };

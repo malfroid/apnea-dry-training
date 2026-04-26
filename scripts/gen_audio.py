@@ -18,11 +18,9 @@ SPEED = 0.9
 
 CLIPS = {
     "ready": "Get ready.",
-    "prep": "Preparation. Breathe normally.",
     "rest": "Rest.",
     "after_contraction": "Keep holding.",
     "one_breath": "Take one single breath. Tap when ready.",
-    "recovery": "Final recovery.",
     "complete": "Session complete. Well done!",
     "tap_contraction": "Tap when you feel the first contraction.",
     "n1": "1",
