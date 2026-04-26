@@ -101,7 +101,6 @@ const CLIP_KEYS = [
   "n1",
   "n2",
   "n3",
-  "n5",
   "n10",
   ...Array.from({ length: 20 }, (_, i) => `hold_${i + 1}`),
 ];
@@ -258,7 +257,7 @@ class SessionEngine {
         if (this.paused) return;
         this.timeLeft--;
         const t = this.timeLeft;
-        if ([10, 5, 3, 2, 1].includes(t)) speak(`n${t}`);
+        if ([10, 3, 2, 1].includes(t)) speak(`n${t}`);
         this.onTick(this._state());
         if (t <= 0) {
           clearInterval(this.timer);
