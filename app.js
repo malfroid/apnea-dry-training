@@ -96,21 +96,28 @@ const settings = {
 // ─────────────────────────────────────────────
 // Audio clips
 // ─────────────────────────────────────────────
-const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+let audioCtx = null;
+function getAudioCtx() {
+  if (!audioCtx) {
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  }
+  return audioCtx;
+}
 
 function playBeep(freq = 440, duration = 0.1, type = "sine") {
   if (!settings.voiceEnabled) return;
-  if (audioCtx.state === "suspended") audioCtx.resume();
-  const osc = audioCtx.createOscillator();
-  const gain = audioCtx.createGain();
+  const ctx = getAudioCtx();
+  if (ctx.state === "suspended") ctx.resume();
+  const osc = ctx.createOscillator();
+  const gain = ctx.createGain();
   osc.type = type;
-  osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
-  gain.gain.setValueAtTime(0.2, audioCtx.currentTime);
-  gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + duration);
+  osc.frequency.setValueAtTime(freq, ctx.currentTime);
+  gain.gain.setValueAtTime(0.2, ctx.currentTime);
+  gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + duration);
   osc.connect(gain);
-  gain.connect(audioCtx.destination);
+  gain.connect(ctx.destination);
   osc.start();
-  osc.stop(audioCtx.currentTime + duration);
+  osc.stop(ctx.currentTime + duration);
 }
 
 const audioExt =
@@ -138,6 +145,31 @@ CLIP_KEYS.forEach((key) => {
 });
 
 let _currentClip = null;
+let _audioUnlocked = false;
+
+function unlockAudio() {
+  if (_audioUnlocked) return;
+  _audioUnlocked = true;
+  const ctx = getAudioCtx();
+  if (ctx.state === "suspended") ctx.resume();
+  Object.values(clips).forEach((a) => {
+    const wasMuted = a.muted;
+    a.muted = true;
+    a.play()
+      .then(() => {
+        a.pause();
+        a.currentTime = 0;
+        a.muted = wasMuted;
+      })
+      .catch(() => {
+        a.muted = wasMuted;
+      });
+  });
+}
+
+document.addEventListener("pointerdown", unlockAudio, { once: true });
+document.addEventListener("touchstart", unlockAudio, { once: true });
+document.addEventListener("keydown", unlockAudio, { once: true });
 
 function speak(key, thenKey = null) {
   if (!settings.voiceEnabled) return;
@@ -288,6 +320,7 @@ class SessionEngine {
         this.onTick(this._state());
       }, 1000);
     } else {
+      if ([10, 3, 2, 1].includes(this.timeLeft)) speak(`n${this.timeLeft}`);
       this.timer = setInterval(() => {
         if (this.paused) return;
         this.timeLeft--;
