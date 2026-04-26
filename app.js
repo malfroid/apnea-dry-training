@@ -362,8 +362,9 @@ function navigate(view, params = {}) {
   btnHist.style.pointerEvents = view !== "tables" ? "none" : "";
   btnSettings.style.visibility = view !== "tables" ? "hidden" : "";
   btnSettings.style.pointerEvents = view !== "tables" ? "none" : "";
-  btnSound.style.visibility = view === "tables" ? "" : "hidden";
-  btnSound.style.pointerEvents = view === "tables" ? "" : "none";
+  const showSound = view === "tables" || view === "session";
+  btnSound.style.visibility = showSound ? "" : "hidden";
+  btnSound.style.pointerEvents = showSound ? "" : "none";
 
   btnBack.onclick = () => {
     if (view === "session" && currentSession) {
@@ -384,7 +385,8 @@ function navigate(view, params = {}) {
       renderEdit(main, params.id || null);
       break;
     case "session":
-      title.textContent = "Session";
+      const table = db.getTable(params.tableId);
+      title.textContent = table ? table.name : "Session";
       renderSession(main, params.tableId);
       break;
     case "history":
