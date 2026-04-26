@@ -441,7 +441,7 @@ function phaseLabel(kind) {
       prep: "Preparation",
       hold: "Hold",
       rest: "Rest",
-      countdown: "Hold for N more seconds",
+      countdown: "Hold",
       breath: "One Single Breath",
       cooldown: "Recovery",
     }[kind] || kind
@@ -456,6 +456,8 @@ function phaseClass(kind) {
 
 function nextLabel(next) {
   if (!next) return "";
+  if (next.kind === "countdown")
+    return `Next: Hold for ${next.dur} more seconds`;
   if (next.countUp) return `Next: ${phaseLabel(next.kind)}`;
   return `Next: ${phaseLabel(next.kind)}${next.dur ? " " + fmtTime(next.dur) : ""}`;
 }
