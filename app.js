@@ -34,6 +34,10 @@ const db = {
   clearSessions() {
     localStorage.removeItem("apnea_sessions");
   },
+  clearAllData() {
+    localStorage.removeItem("apnea_tables");
+    localStorage.removeItem("apnea_sessions");
+  },
 };
 
 // ─────────────────────────────────────────────
@@ -349,11 +353,17 @@ function navigate(view, params = {}) {
   const title = document.getElementById("header-title");
   const btnBack = document.getElementById("btn-back");
   const btnHist = document.getElementById("btn-history");
+  const btnSettings = document.getElementById("btn-settings");
+  const btnSound = document.getElementById("btn-sound");
 
   btnBack.style.visibility = view === "tables" ? "hidden" : "";
   btnBack.style.pointerEvents = view === "tables" ? "none" : "";
   btnHist.style.visibility = view !== "tables" ? "hidden" : "";
   btnHist.style.pointerEvents = view !== "tables" ? "none" : "";
+  btnSettings.style.visibility = view !== "tables" ? "hidden" : "";
+  btnSettings.style.pointerEvents = view !== "tables" ? "none" : "";
+  btnSound.style.visibility = view === "tables" ? "" : "hidden";
+  btnSound.style.pointerEvents = view === "tables" ? "" : "none";
 
   btnBack.onclick = () => {
     if (view === "session" && currentSession) {
@@ -380,6 +390,10 @@ function navigate(view, params = {}) {
     case "history":
       title.textContent = "History";
       renderHistory(main);
+      break;
+    case "settings":
+      title.textContent = "Settings";
+      renderSettings(main);
       break;
   }
 }
@@ -926,6 +940,48 @@ function renderHistory(main) {
 }
 
 // ─────────────────────────────────────────────
+// View: Settings
+// ─────────────────────────────────────────────
+function renderSettings(main) {
+  main.innerHTML = `
+    <div class="card">
+      <div class="settings-row">
+        <div class="settings-label">
+          <div class="settings-title">Audio Cues</div>
+          <div class="settings-desc">Voice guidance during sessions</div>
+        </div>
+        <label class="switch">
+          <input type="checkbox" id="toggle-voice" ${settings.voiceEnabled ? "checked" : ""}>
+          <span class="slider round"></span>
+        </label>
+      </div>
+    </div>
+
+    <div class="delete-zone" style="margin-top: 40px">
+      <button class="btn btn-danger" id="btn-delete-all">Delete All Data</button>
+      <p class="settings-help">This will permanently delete all your training tables and history.</p>
+    </div>
+  `;
+
+  document.getElementById("toggle-voice").addEventListener("change", (e) => {
+    settings.voiceEnabled = e.target.checked;
+    updateSoundBtn();
+  });
+
+  document.getElementById("btn-delete-all").addEventListener("click", () => {
+    if (
+      confirm(
+        "Delete ALL data? This will remove all your custom tables and training history. This cannot be undone.",
+      )
+    ) {
+      db.clearAllData();
+      alert("All data has been cleared.");
+      navigate("tables");
+    }
+  });
+}
+
+// ─────────────────────────────────────────────
 // Init
 // ─────────────────────────────────────────────
 function showDisclaimer() {
@@ -976,6 +1032,9 @@ updateSoundBtn();
 document
   .getElementById("btn-history")
   .addEventListener("click", () => navigate("history"));
+document
+  .getElementById("btn-settings")
+  .addEventListener("click", () => navigate("settings"));
 
 document.addEventListener("keydown", (e) => {
   if (e.code !== "Space" || e.repeat) return;
