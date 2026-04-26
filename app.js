@@ -31,6 +31,9 @@ const db = {
     list.unshift(s);
     localStorage.setItem("apnea_sessions", JSON.stringify(list));
   },
+  clearSessions() {
+    localStorage.removeItem("apnea_sessions");
+  },
 };
 
 // ─────────────────────────────────────────────
@@ -890,7 +893,25 @@ function renderHistory(main) {
     })
     .join("");
 
-  main.innerHTML = `<div class="card">${rows}</div>`;
+  main.innerHTML = `
+    <div class="card">${rows}</div>
+    <div class="delete-zone" style="margin-top: 24px">
+      <button class="btn btn-danger" id="btn-clear-history">Clear All History</button>
+    </div>
+    <div class="list-bottom-pad"></div>`;
+
+  document.getElementById("btn-clear-history").addEventListener("click", () => {
+    if (
+      confirm(
+        "Are you sure you want to delete ALL training history? This cannot be undone.",
+      )
+    ) {
+      if (confirm("Really delete everything?")) {
+        db.clearSessions();
+        renderHistory(main);
+      }
+    }
+  });
 }
 
 // ─────────────────────────────────────────────
