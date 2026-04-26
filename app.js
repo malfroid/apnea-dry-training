@@ -426,7 +426,7 @@ function tableSummary(t) {
         ` · rest ${fmtTime(p.restTime)}`
       );
     case "wonka":
-      return `${p.breathholds} breathholds · hold after contraction ${fmtTime(p.countdownAfterContraction)}`;
+      return `${p.breathholds} breathholds · hold for ${p.countdownAfterContraction} more seconds`;
     case "custom":
       return `${p.rounds.length} rounds`;
     default:
@@ -441,8 +441,8 @@ function phaseLabel(kind) {
       prep: "Preparation",
       hold: "Hold",
       rest: "Rest",
-      countdown: "Hold After Contraction",
-      breath: "One Breath",
+      countdown: "Hold for N more seconds",
+      breath: "One Single Breath",
       cooldown: "Recovery",
     }[kind] || kind
   );
@@ -791,7 +791,11 @@ function renderSession(main, tableId) {
       : "";
 
     const phaseEl = document.getElementById("s-phase");
-    phaseEl.textContent = phaseLabel(phase.kind);
+    let label = phaseLabel(phase.kind);
+    if (phase.kind === "countdown") {
+      label = `Hold for ${phase.dur} more seconds`;
+    }
+    phaseEl.textContent = label;
     phaseEl.className = `session-phase ${phaseClass(phase.kind)}`;
 
     document.getElementById("s-timer").textContent = phase.countUp
