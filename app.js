@@ -154,7 +154,7 @@ class SessionEngine {
     }
 
     this._announce(ph);
-    this.onPhaseChange(ph, this._state());
+    this.onPhaseChange(this._state());
     clearInterval(this.timer);
 
     if (ph.userTriggered) {
