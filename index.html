@@ -13,7 +13,16 @@
         />
         <meta name="theme-color" content="#0f1923" />
         <title>Apnea Dry Training</title>
-        <link rel="stylesheet" href="style.css" />
+        <script>
+            (function () {
+                var v = new URLSearchParams(location.search).get("v");
+                var q = v ? "?v=" + v : "";
+                var link = document.createElement("link");
+                link.rel = "stylesheet";
+                link.href = "style.css" + q;
+                document.head.appendChild(link);
+            })();
+        </script>
     </head>
     <body>
         <div id="app">
@@ -73,6 +82,13 @@
             </header>
             <main id="main"></main>
         </div>
-        <script src="app.js"></script>
+        <script>
+            (function () {
+                var v = new URLSearchParams(location.search).get("v");
+                var s = document.createElement("script");
+                s.src = "app.js" + (v ? "?v=" + v : "");
+                document.body.appendChild(s);
+            })();
+        </script>
     </body>
 </html>

@@ -1016,6 +1016,11 @@ function renderSettings(main) {
       <button class="btn btn-danger" id="btn-delete-all">Delete All Data</button>
       <p class="settings-help">This will permanently delete all your training tables and history.</p>
     </div>
+
+    <div class="delete-zone" style="margin-top: 24px">
+      <button class="btn btn-secondary" id="btn-reload-assets">Reload App</button>
+      <p class="settings-help">Force-download fresh JS, CSS, and audio. Use after updating the app on Safari.</p>
+    </div>
   `;
 
   document.getElementById("toggle-voice").addEventListener("change", (e) => {
@@ -1042,6 +1047,10 @@ function renderSettings(main) {
       alert("All data has been cleared.");
       navigate("tables");
     }
+  });
+
+  document.getElementById("btn-reload-assets").addEventListener("click", () => {
+    location.href = "?v=" + Date.now();
   });
 }
 
