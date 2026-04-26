@@ -73,8 +73,13 @@ if (window.speechSynthesis) {
   speechSynthesis.addEventListener('voiceschanged', loadVoice);
 }
 
+const settings = {
+  get voiceEnabled() { return localStorage.getItem('apnea_voice') !== 'off'; },
+  set voiceEnabled(v) { localStorage.setItem('apnea_voice', v ? 'on' : 'off'); },
+};
+
 function speak(text) {
-  if (!window.speechSynthesis) return;
+  if (!window.speechSynthesis || !settings.voiceEnabled) return;
   window.speechSynthesis.cancel();
   const u = new SpeechSynthesisUtterance(text);
   u.rate = 0.92;
@@ -737,5 +742,19 @@ function renderHistory(main) {
 // ─────────────────────────────────────────────
 // Init
 // ─────────────────────────────────────────────
+const SVG_SOUND_ON  = `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/></svg>`;
+const SVG_SOUND_OFF = `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><line x1="23" y1="9" x2="17" y2="15"/><line x1="17" y1="9" x2="23" y2="15"/></svg>`;
+
+const btnSound = document.getElementById('btn-sound');
+function updateSoundBtn() {
+  btnSound.innerHTML = settings.voiceEnabled ? SVG_SOUND_ON : SVG_SOUND_OFF;
+  btnSound.style.opacity = settings.voiceEnabled ? '1' : '0.4';
+}
+btnSound.addEventListener('click', () => {
+  settings.voiceEnabled = !settings.voiceEnabled;
+  updateSoundBtn();
+});
+updateSoundBtn();
+
 document.getElementById('btn-history').addEventListener('click', () => navigate('history'));
 navigate('tables');
