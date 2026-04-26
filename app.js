@@ -906,10 +906,8 @@ function renderHistory(main) {
         "Are you sure you want to delete ALL training history? This cannot be undone.",
       )
     ) {
-      if (confirm("Really delete everything?")) {
-        db.clearSessions();
-        renderHistory(main);
-      }
+      db.clearSessions();
+      renderHistory(main);
     }
   });
 }
