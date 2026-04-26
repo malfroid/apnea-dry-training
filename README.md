@@ -1,6 +1,6 @@
 # Apnea Trainer
 
-A minimal local-first web app for apnea dry training, inspired by apnea training app.
+A minimal local-first web app for apnea dry training.
 
 ## Features
 
