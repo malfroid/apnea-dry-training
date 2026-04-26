@@ -333,6 +333,7 @@ select.form-input { cursor: pointer; }
   box-shadow: 0 4px 20px rgba(224, 85, 85, 0.4);
 }
 .btn-contraction:active { transform: scale(0.97); }
+.btn-ready { background: var(--prep); box-shadow: 0 4px 20px rgba(85, 153, 224, 0.4); }
 
 .session-controls {
   display: flex;

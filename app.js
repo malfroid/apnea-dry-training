@@ -101,8 +101,11 @@ class SessionEngine {
         phases.push({ kind: 'hold',      dur: null, round: i + 1, countUp: true });
         phases.push({ kind: 'countdown', dur: p.countdownAfterContraction, round: i + 1 });
         if (i < p.breathholds - 1)
-          phases.push({ kind: 'cooldown', dur: p.cooldownTime, round: i + 1 });
+          phases.push({ kind: 'breath', dur: null, round: i + 1, userTriggered: true });
       }
+      // single cooldown after all rounds
+      if (p.cooldownTime > 0)
+        phases.push({ kind: 'cooldown', dur: p.cooldownTime, round: p.breathholds });
     } else {
       const rounds = this._buildRounds();
       phases.push({ kind: 'ready', dur: 5, round: 0 });
@@ -154,6 +157,11 @@ class SessionEngine {
     this.onPhaseChange(ph, this._state());
     clearInterval(this.timer);
 
+    if (ph.userTriggered) {
+      // no timer — wait for signalReady()
+      return;
+    }
+
     if (ph.countUp) {
       this.timer = setInterval(() => {
         if (this.paused) return;
@@ -174,6 +182,11 @@ class SessionEngine {
         }
       }, 1000);
     }
+  }
+
+  signalReady() {
+    const ph = this.phases[this.phaseIdx];
+    if (ph?.userTriggered) this._enter(this.phaseIdx + 1);
   }
 
   signalContraction() {
@@ -227,7 +240,8 @@ class SessionEngine {
                   : `Round ${n} of ${total}. Hold.`,
       rest:     `Rest. ${fmtTime(ph.dur)}.`,
       countdown:'After contraction.',
-      cooldown: 'Recovery. One breath.',
+      breath:   'Take one breath. Tap when ready.',
+      cooldown: 'Final recovery.',
     };
     const msg = msgs[ph.kind];
     if (msg) speak(msg);
@@ -325,7 +339,8 @@ function tableSummary(t) {
 
 function phaseLabel(kind) {
   return { ready: 'Get Ready', prep: 'Preparation', hold: 'Hold',
-           rest: 'Rest', countdown: 'After Contraction', cooldown: 'Recovery' }[kind] || kind;
+           rest: 'Rest', countdown: 'After Contraction',
+           breath: 'One Breath', cooldown: 'Recovery' }[kind] || kind;
 }
 
 function phaseClass(kind) {
@@ -484,7 +499,7 @@ function renderEdit(main, id) {
           ${timePairHtml('f-countdownAfterContraction', p.countdownAfterContraction ?? 30)}
         </div>
         <div class="form-group">
-          <label class="form-label">Cooldown Time (between rounds)</label>
+          <label class="form-label">Final Cooldown Time (after last round)</label>
           ${timePairHtml('f-cooldownTime', p.cooldownTime ?? 120)}
         </div>`;
 
@@ -598,6 +613,7 @@ function renderSession(main, tableId) {
       <div class="session-timer"  id="s-timer">–:––</div>
       <div class="session-next"   id="s-next"></div>
       <button class="btn-contraction" id="btn-contraction" hidden>First Contraction</button>
+      <button class="btn-contraction btn-ready" id="btn-ready" hidden>Ready</button>
       <div class="session-controls">
         <button class="btn btn-secondary" id="btn-pause">Pause</button>
         <button class="btn btn-danger"    id="btn-stop">Stop</button>
@@ -613,12 +629,15 @@ function renderSession(main, tableId) {
     phaseEl.className    = `session-phase ${phaseClass(phase.kind)}`;
 
     document.getElementById('s-timer').textContent =
-      phase.countUp ? fmtTime(elapsed) : fmtTime(timeLeft ?? 0);
+      phase.countUp ? fmtTime(elapsed) : (phase.userTriggered ? '–' : fmtTime(timeLeft ?? 0));
 
     document.getElementById('s-next').textContent = nextLabel(next);
 
     document.getElementById('btn-contraction').hidden =
       !(phase.kind === 'hold' && phase.countUp);
+
+    document.getElementById('btn-ready').hidden =
+      !phase.userTriggered;
 
     document.getElementById('btn-pause').textContent = paused ? 'Resume' : 'Pause';
   }
@@ -640,6 +659,7 @@ function renderSession(main, tableId) {
   });
 
   document.getElementById('btn-contraction').addEventListener('click', () => currentSession?.signalContraction());
+  document.getElementById('btn-ready').addEventListener('click', () => currentSession?.signalReady());
 
   document.getElementById('btn-pause').addEventListener('click', () => {
     const paused = currentSession?.togglePause();
