@@ -176,7 +176,6 @@ class SessionEngine {
       }
     } else {
       const rounds = this._buildRounds();
-      phases.push({ kind: "ready", dur: 5, round: 0 });
 
       for (let i = 0; i < rounds.length; i++) {
         phases.push({ kind: "hold", dur: rounds[i].hold, round: i + 1 });
@@ -744,18 +743,75 @@ function renderSession(main, tableId) {
   }
 
   main.innerHTML = `
-    <div class="session-wrap">
-      <div class="session-round"  id="s-round"></div>
-      <div class="session-phase"  id="s-phase"></div>
-      <div class="session-timer"  id="s-timer">–:––</div>
-      <div class="session-next"   id="s-next"></div>
-      <button class="btn-contraction" id="btn-contraction" hidden>First Contraction</button>
-      <button class="btn-contraction btn-ready" id="btn-ready" hidden>Ready</button>
-      <div class="session-controls">
-        <button class="btn btn-secondary" id="btn-pause">Pause</button>
-        <button class="btn btn-danger"    id="btn-stop">Stop</button>
-      </div>
+    <div class="session-start-screen">
+      <div class="start-icon">${typeIcon(table.type)}</div>
+      <h2>Ready to start?</h2>
+      <p>Take as much time as you need for initial relaxation and your breathe-up.</p>
+      <div class="start-meta">${table.name} · ${tableSummary(table)}</div>
+      <button class="btn btn-primary" id="btn-start-session">Start Training</button>
     </div>`;
+
+  document.getElementById("btn-start-session").addEventListener("click", () => {
+    startActualSession();
+  });
+
+  function startActualSession() {
+    main.innerHTML = `
+      <div class="session-wrap">
+        <div class="session-round"  id="s-round"></div>
+        <div class="session-phase"  id="s-phase"></div>
+        <div class="session-timer"  id="s-timer">–:––</div>
+        <div class="session-next"   id="s-next"></div>
+        <button class="btn-contraction" id="btn-contraction" hidden>First Contraction</button>
+        <button class="btn-contraction btn-ready" id="btn-ready" hidden>Ready</button>
+        <div class="session-controls">
+          <button class="btn btn-secondary" id="btn-pause">Pause</button>
+          <button class="btn btn-danger"    id="btn-stop">Stop</button>
+        </div>
+      </div>`;
+
+    currentSession = new SessionEngine(table, {
+      onTick: updateUI,
+      onPhaseChange: updateUI,
+      onComplete: ({ completedRounds, totalRounds, duration }) => {
+        main.innerHTML = `
+          <div class="session-complete">
+            <div class="checkmark">✓</div>
+            <h2>Session Complete</h2>
+            <p>${completedRounds} of ${totalRounds} rounds completed.<br>Total time: ${fmtTime(duration)}.</p>
+            <button class="btn btn-primary" id="btn-done">Done</button>
+          </div>`;
+        document
+          .getElementById("btn-done")
+          .addEventListener("click", () => navigate("tables"));
+        currentSession = null;
+      },
+    });
+
+    document
+      .getElementById("btn-contraction")
+      .addEventListener("click", () => currentSession?.signalContraction());
+    document
+      .getElementById("btn-ready")
+      .addEventListener("click", () => currentSession?.signalReady());
+
+    document.getElementById("btn-pause").addEventListener("click", () => {
+      const paused = currentSession?.togglePause();
+      document.getElementById("btn-pause").textContent = paused
+        ? "Resume"
+        : "Pause";
+    });
+
+    document.getElementById("btn-stop").addEventListener("click", () => {
+      if (confirm("Stop the session?")) {
+        currentSession?.stop();
+        currentSession = null;
+        navigate("tables");
+      }
+    });
+
+    currentSession.start();
+  }
 
   function updateUI({
     phase,
@@ -766,78 +822,52 @@ function renderSession(main, tableId) {
     totalRounds,
     paused,
   }) {
-    document.getElementById("s-round").textContent = phase.round
-      ? `Round ${phase.round} of ${totalRounds}`
-      : "";
+    const roundEl = document.getElementById("s-round");
+    if (roundEl) {
+      roundEl.textContent = phase.round
+        ? `Round ${phase.round} of ${totalRounds}`
+        : "";
+    }
 
     const phaseEl = document.getElementById("s-phase");
-    let label = phaseLabel(phase.kind);
-    if (phase.kind === "countdown") {
-      label = `Hold for ${phase.dur} more seconds`;
+    if (phaseEl) {
+      let label = phaseLabel(phase.kind);
+      if (phase.kind === "countdown") {
+        label = `Hold for ${phase.dur} more seconds`;
+      }
+      phaseEl.textContent = label;
+      phaseEl.className = `session-phase ${phaseClass(phase.kind)}`;
     }
-    phaseEl.textContent = label;
-    phaseEl.className = `session-phase ${phaseClass(phase.kind)}`;
 
-    document.getElementById("s-timer").textContent = phase.countUp
-      ? fmtTime(elapsed)
-      : phase.userTriggered
-        ? "–"
-        : fmtTime(timeLeft ?? 0);
+    const timerEl = document.getElementById("s-timer");
+    if (timerEl) {
+      timerEl.textContent = phase.countUp
+        ? fmtTime(elapsed)
+        : phase.userTriggered
+          ? "–"
+          : fmtTime(timeLeft ?? 0);
+    }
 
-    document.getElementById("s-next").textContent = nextLabel(next);
+    const nextEl = document.getElementById("s-next");
+    if (nextEl) {
+      nextEl.textContent = nextLabel(next);
+    }
 
-    document.getElementById("btn-contraction").hidden = !(
-      phase.kind === "hold" && phase.countUp
-    );
+    const btnContraction = document.getElementById("btn-contraction");
+    if (btnContraction) {
+      btnContraction.hidden = !(phase.kind === "hold" && phase.countUp);
+    }
 
-    document.getElementById("btn-ready").hidden = !phase.userTriggered;
+    const btnReady = document.getElementById("btn-ready");
+    if (btnReady) {
+      btnReady.hidden = !phase.userTriggered;
+    }
 
-    document.getElementById("btn-pause").textContent = paused
-      ? "Resume"
-      : "Pause";
+    const btnPause = document.getElementById("btn-pause");
+    if (btnPause) {
+      btnPause.textContent = paused ? "Resume" : "Pause";
+    }
   }
-
-  currentSession = new SessionEngine(table, {
-    onTick: updateUI,
-    onPhaseChange: updateUI,
-    onComplete: ({ completedRounds, totalRounds, duration }) => {
-      main.innerHTML = `
-        <div class="session-complete">
-          <div class="checkmark">✓</div>
-          <h2>Session Complete</h2>
-          <p>${completedRounds} of ${totalRounds} rounds completed.<br>Total time: ${fmtTime(duration)}.</p>
-          <button class="btn btn-primary" id="btn-done">Done</button>
-        </div>`;
-      document
-        .getElementById("btn-done")
-        .addEventListener("click", () => navigate("tables"));
-      currentSession = null;
-    },
-  });
-
-  document
-    .getElementById("btn-contraction")
-    .addEventListener("click", () => currentSession?.signalContraction());
-  document
-    .getElementById("btn-ready")
-    .addEventListener("click", () => currentSession?.signalReady());
-
-  document.getElementById("btn-pause").addEventListener("click", () => {
-    const paused = currentSession?.togglePause();
-    document.getElementById("btn-pause").textContent = paused
-      ? "Resume"
-      : "Pause";
-  });
-
-  document.getElementById("btn-stop").addEventListener("click", () => {
-    if (confirm("Stop the session?")) {
-      currentSession?.stop();
-      currentSession = null;
-      navigate("tables");
-    }
-  });
-
-  currentSession.start();
 }
 
 // ─────────────────────────────────────────────

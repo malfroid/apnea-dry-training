@@ -382,6 +382,42 @@ select.form-input {
 }
 
 /* ── Session ── */
+.session-start-screen {
+    text-align: center;
+    padding: 60px 24px 40px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+}
+.start-icon {
+    margin-bottom: 24px;
+    transform: scale(1.2);
+}
+.session-start-screen h2 {
+    font-size: 1.7rem;
+    font-weight: 700;
+    margin-bottom: 12px;
+}
+.session-start-screen p {
+    color: var(--text2);
+    line-height: 1.6;
+    font-size: 1rem;
+    margin-bottom: 24px;
+    max-width: 320px;
+}
+.start-meta {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    padding: 10px 16px;
+    border-radius: 12px;
+    font-size: 0.85rem;
+    color: var(--text2);
+    margin-bottom: 40px;
+}
+.session-start-screen .btn {
+    max-width: 280px;
+}
+
 .session-wrap {
     display: flex;
     flex-direction: column;
