@@ -430,22 +430,27 @@ select.form-input {
     color: var(--text2);
     font-size: 0.85rem;
     min-height: 18px;
-    margin-bottom: 48px;
+    margin-bottom: 32px;
 }
 
 .btn-contraction {
+    width: 100%;
+    max-width: 300px;
     background: var(--hold);
     color: #fff;
     border: none;
     border-radius: 14px;
-    padding: 20px 48px;
-    font-size: 1rem;
+    padding: 18px 24px;
+    font-size: 1.05rem;
     font-weight: 700;
     cursor: pointer;
     letter-spacing: 0.06em;
     text-transform: uppercase;
-    margin-bottom: 40px;
+    margin-bottom: 12px;
     box-shadow: 0 4px 20px rgba(224, 85, 85, 0.4);
+    display: flex;
+    align-items: center;
+    justify-content: center;
 }
 .btn-contraction:active {
     transform: scale(0.97);
@@ -460,9 +465,12 @@ select.form-input {
     gap: 12px;
     width: 100%;
     max-width: 300px;
+    margin-top: 0;
 }
 .session-controls .btn {
     flex: 1;
+    padding: 14px;
+    font-size: 0.9rem;
 }
 
 /* ── Session complete ── */
