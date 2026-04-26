@@ -317,7 +317,7 @@ select.form-input { cursor: pointer; }
   font-weight: 200;
   letter-spacing: 0.02em;
   font-variant-numeric: tabular-nums;
-  font-family: 'SF Mono', 'Fira Mono', 'Consolas', monospace;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   margin-bottom: 12px;
   line-height: 1;
 }
@@ -407,3 +407,32 @@ select.form-input { cursor: pointer; }
 
 /* bottom padding so FAB doesn't overlap last item */
 .list-bottom-pad { height: 80px; }
+
+/* ── Desktop card layout ── */
+@media (min-width: 520px) {
+  html, body {
+    display: flex;
+    align-items: flex-start;
+    justify-content: center;
+    padding: 32px 16px 48px;
+  }
+
+  #app {
+    height: auto;
+    min-height: 0;
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    box-shadow: 0 24px 80px rgba(0, 0, 0, 0.55);
+    overflow: hidden;
+  }
+
+  main {
+    min-height: 480px;
+  }
+
+  .session-wrap {
+    min-height: 540px;
+  }
+
+  .card-row:hover { background: var(--surface2); }
+}
