@@ -473,7 +473,7 @@ function tableSummary(t) {
         ` · rest ${fmtTime(p.restTime)}`
       );
     case "wonka":
-      return `${p.breathholds} breathholds · hold for ${p.countdownAfterContraction} more seconds`;
+      return `${p.breathholds} breathholds · hold ${p.countdownAfterContraction} more seconds`;
     case "custom":
       return `${p.rounds.length} rounds`;
     default:
@@ -503,8 +503,7 @@ function phaseClass(kind) {
 
 function nextLabel(next) {
   if (!next) return "";
-  if (next.kind === "countdown")
-    return `Next: Hold for ${next.dur} more seconds`;
+  if (next.kind === "countdown") return `Next: Hold ${next.dur} more seconds`;
   if (next.countUp) return `Next: ${phaseLabel(next.kind)}`;
   return `Next: ${phaseLabel(next.kind)}${next.dur ? " " + fmtTime(next.dur) : ""}`;
 }
@@ -893,7 +892,7 @@ function renderSession(main, tableId) {
     if (phaseEl) {
       let label = phaseLabel(phase.kind);
       if (phase.kind === "countdown") {
-        label = `Hold for ${phase.dur} more seconds`;
+        label = `Hold ${phase.dur} more seconds`;
       }
       phaseEl.textContent = label;
       phaseEl.className = `session-phase ${phaseClass(phase.kind)}`;
