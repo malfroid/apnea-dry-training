@@ -418,6 +418,7 @@ select.form-input { cursor: pointer; }
   }
 
   #app {
+    width: 480px;
     height: auto;
     min-height: 0;
     border: 1px solid var(--border);

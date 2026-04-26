@@ -305,8 +305,10 @@ function navigate(view, params = {}) {
   const btnBack   = document.getElementById('btn-back');
   const btnHist   = document.getElementById('btn-history');
 
-  btnBack.hidden = (view === 'tables');
-  btnHist.hidden = (view !== 'tables');
+  btnBack.style.visibility = view === 'tables' ? 'hidden' : '';
+  btnBack.style.pointerEvents = view === 'tables' ? 'none' : '';
+  btnHist.style.visibility = view !== 'tables' ? 'hidden' : '';
+  btnHist.style.pointerEvents = view !== 'tables' ? 'none' : '';
 
   btnBack.onclick = () => {
     if (view === 'session' && currentSession) {
@@ -319,7 +321,7 @@ function navigate(view, params = {}) {
 
   switch (view) {
     case 'tables':
-      title.textContent = 'Tables';
+      title.textContent = 'Apnea Dry Training Tables';
       renderTables(main);
       break;
     case 'edit':
