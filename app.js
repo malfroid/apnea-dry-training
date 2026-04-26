@@ -52,39 +52,43 @@ function fmtDate(iso) {
 }
 
 // ─────────────────────────────────────────────
-// Speech
+// Settings
 // ─────────────────────────────────────────────
-let preferredVoice = null;
-
-function loadVoice() {
-  const voices = speechSynthesis.getVoices();
-  if (!voices.length) return;
-  const en = voices.filter(v => v.lang.startsWith('en'));
-  // prefer Natural/Enhanced voices (macOS/iOS system voices)
-  preferredVoice = en.find(v => /natural|enhanced/i.test(v.name))
-    || en.find(v => v.localService)
-    || en[0]
-    || voices[0]
-    || null;
-}
-
-if (window.speechSynthesis) {
-  loadVoice();
-  speechSynthesis.addEventListener('voiceschanged', loadVoice);
-}
-
 const settings = {
   get voiceEnabled() { return localStorage.getItem('apnea_voice') !== 'off'; },
   set voiceEnabled(v) { localStorage.setItem('apnea_voice', v ? 'on' : 'off'); },
 };
 
-function speak(text) {
-  if (!window.speechSynthesis || !settings.voiceEnabled) return;
-  window.speechSynthesis.cancel();
-  const u = new SpeechSynthesisUtterance(text);
-  u.rate = 0.92;
-  if (preferredVoice) u.voice = preferredVoice;
-  window.speechSynthesis.speak(u);
+// ─────────────────────────────────────────────
+// Audio clips
+// ─────────────────────────────────────────────
+const audioExt = new Audio().canPlayType('audio/webm; codecs=opus') !== '' ? 'opus' : 'mp3';
+
+const CLIP_KEYS = [
+  'ready', 'prep', 'rest', 'after_contraction', 'one_breath',
+  'recovery', 'complete', 'tap_contraction',
+  'n1', 'n2', 'n3', 'n5', 'n10',
+  ...Array.from({ length: 20 }, (_, i) => `hold_${i + 1}`),
+];
+
+const clips = {};
+CLIP_KEYS.forEach(key => {
+  const a = new Audio(`audio/${key}.${audioExt}`);
+  a.preload = 'auto';
+  clips[key] = a;
+});
+
+let _currentClip = null;
+
+function speak(key, thenKey = null) {
+  if (!settings.voiceEnabled) return;
+  if (_currentClip) { _currentClip.onended = null; _currentClip.pause(); _currentClip.currentTime = 0; }
+  const audio = clips[key];
+  if (!audio) return;
+  audio.currentTime = 0;
+  _currentClip = audio;
+  audio.onended = thenKey ? () => speak(thenKey) : null;
+  audio.play().catch(() => {});
 }
 
 // ─────────────────────────────────────────────
@@ -198,7 +202,7 @@ class SessionEngine {
         if (this.paused) return;
         this.timeLeft--;
         const t = this.timeLeft;
-        if ([10, 5, 3, 2, 1].includes(t)) speak(String(t));
+        if ([10, 5, 3, 2, 1].includes(t)) speak(`n${t}`);
         this.onTick(this._state());
         if (t <= 0) {
           clearInterval(this.timer);
@@ -219,7 +223,6 @@ class SessionEngine {
     if (ph?.kind === 'hold' && ph.countUp) {
       clearInterval(this.timer);
       this.completedRounds++;
-      speak('Contraction.');
       this._enter(this.phaseIdx + 1);
     }
   }
@@ -236,7 +239,7 @@ class SessionEngine {
 
   _complete() {
     clearInterval(this.timer);
-    speak('Session complete. Well done!');
+    speak('complete');
     this._persist(true);
     this.onComplete(this._state());
   }
@@ -256,20 +259,20 @@ class SessionEngine {
   }
 
   _announce(ph) {
-    const n = ph.round, total = this.totalRounds;
-    const msgs = {
-      ready:    'Get ready.',
-      prep:     'Preparation. Breathe normally.',
-      hold:     ph.countUp
-                  ? `Round ${n} of ${total}. Hold. Tap when first contraction.`
-                  : `Round ${n} of ${total}. Hold.`,
-      rest:     `Rest. ${fmtTime(ph.dur)}.`,
-      countdown:'After contraction.',
-      breath:   'Take one breath. Tap when ready.',
-      cooldown: 'Final recovery.',
-    };
-    const msg = msgs[ph.kind];
-    if (msg) speak(msg);
+    const n = ph.round;
+    const key = {
+      ready:     'ready',
+      prep:      'prep',
+      rest:      'rest',
+      countdown: 'after_contraction',
+      breath:    'one_breath',
+      cooldown:  'recovery',
+    }[ph.kind];
+    if (key) { speak(key); return; }
+    if (ph.kind === 'hold') {
+      const holdKey = n >= 1 && n <= 20 ? `hold_${n}` : null;
+      if (holdKey) speak(holdKey, ph.countUp ? 'tap_contraction' : null);
+    }
   }
 
   _state() {
@@ -770,4 +773,17 @@ btnSound.addEventListener('click', () => {
 updateSoundBtn();
 
 document.getElementById('btn-history').addEventListener('click', () => navigate('history'));
+
+document.addEventListener('keydown', e => {
+  if (e.code !== 'Space' || e.repeat) return;
+  const t = e.target;
+  if (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT') return;
+  const btnContraction = document.getElementById('btn-contraction');
+  const btnReady       = document.getElementById('btn-ready');
+  const btnDone        = document.getElementById('btn-done');
+  if (btnContraction && !btnContraction.hidden) { e.preventDefault(); btnContraction.click(); }
+  else if (btnReady && !btnReady.hidden)        { e.preventDefault(); btnReady.click(); }
+  else if (btnDone)                             { e.preventDefault(); btnDone.click(); }
+});
+
 navigate('tables');
