@@ -424,7 +424,7 @@ function tableSummary(t) {
         ` · rest ${fmtTime(p.restTime)}`
       );
     case "wonka":
-      return `${p.breathholds} breathholds · countdown ${fmtTime(p.countdownAfterContraction)}`;
+      return `${p.breathholds} breathholds · hold after contraction ${fmtTime(p.countdownAfterContraction)}`;
     case "custom":
       return `${p.rounds.length} rounds`;
     default:
@@ -439,7 +439,7 @@ function phaseLabel(kind) {
       prep: "Preparation",
       hold: "Hold",
       rest: "Rest",
-      countdown: "After Contraction",
+      countdown: "Hold After Contraction",
       breath: "One Breath",
       cooldown: "Recovery",
     }[kind] || kind
@@ -587,7 +587,7 @@ function renderEdit(main, id) {
           <input class="form-input" id="f-rounds" type="number" min="1" max="30" value="${p.rounds || 8}">
         </div>
         <div class="form-group">
-          <label class="form-label">Hold Time (fixed)</label>
+          <label class="form-label">Breath Hold (fixed)</label>
           ${timePairHtml("f-holdTime", p.holdTime ?? 90)}
         </div>
         <div class="form-group">
@@ -623,11 +623,11 @@ function renderEdit(main, id) {
           <input class="form-input" id="f-breathholds" type="number" min="1" max="30" value="${p.breathholds || 5}">
         </div>
         <div class="form-group">
-          <label class="form-label">Preparation Time</label>
+          <label class="form-label">Initial Relaxation</label>
           ${timePairHtml("f-prepTime", p.prepTime ?? 120)}
         </div>
         <div class="form-group">
-          <label class="form-label">Countdown After 1st Contraction</label>
+          <label class="form-label">Hold After 1st Contraction</label>
           ${timePairHtml("f-countdownAfterContraction", p.countdownAfterContraction ?? 30)}
         </div>
         <div class="form-group">
