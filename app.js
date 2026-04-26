@@ -1,25 +1,35 @@
-'use strict';
+"use strict";
 
 // ─────────────────────────────────────────────
 // Storage
 // ─────────────────────────────────────────────
 const db = {
-  getTables()      { return JSON.parse(localStorage.getItem('apnea_tables')   || '[]'); },
-  getTable(id)     { return this.getTables().find(t => t.id === id) || null; },
+  getTables() {
+    return JSON.parse(localStorage.getItem("apnea_tables") || "[]");
+  },
+  getTable(id) {
+    return this.getTables().find((t) => t.id === id) || null;
+  },
   saveTable(table) {
     const list = this.getTables();
-    const i = list.findIndex(t => t.id === table.id);
-    if (i >= 0) list[i] = table; else list.push(table);
-    localStorage.setItem('apnea_tables', JSON.stringify(list));
+    const i = list.findIndex((t) => t.id === table.id);
+    if (i >= 0) list[i] = table;
+    else list.push(table);
+    localStorage.setItem("apnea_tables", JSON.stringify(list));
   },
-  deleteTable(id)  {
-    localStorage.setItem('apnea_tables', JSON.stringify(this.getTables().filter(t => t.id !== id)));
+  deleteTable(id) {
+    localStorage.setItem(
+      "apnea_tables",
+      JSON.stringify(this.getTables().filter((t) => t.id !== id)),
+    );
   },
-  getSessions()      { return JSON.parse(localStorage.getItem('apnea_sessions') || '[]'); },
-  saveSession(s)     {
+  getSessions() {
+    return JSON.parse(localStorage.getItem("apnea_sessions") || "[]");
+  },
+  saveSession(s) {
     const list = this.getSessions();
     list.unshift(s);
-    localStorage.setItem('apnea_sessions', JSON.stringify(list));
+    localStorage.setItem("apnea_sessions", JSON.stringify(list));
   },
 };
 
@@ -32,14 +42,14 @@ function uid() {
 
 function fmtTime(sec) {
   const s = Math.max(0, Math.round(sec));
-  return `${Math.floor(s / 60)}:${(s % 60).toString().padStart(2, '0')}`;
+  return `${Math.floor(s / 60)}:${(s % 60).toString().padStart(2, "0")}`;
 }
 
 function parseTimeStr(str) {
   if (!str) return 0;
   str = String(str).trim();
-  if (str.includes(':')) {
-    const [m, s] = str.split(':').map(n => parseInt(n) || 0);
+  if (str.includes(":")) {
+    const [m, s] = str.split(":").map((n) => parseInt(n) || 0);
     return m * 60 + s;
   }
   return parseInt(str) || 0;
@@ -47,34 +57,56 @@ function parseTimeStr(str) {
 
 function fmtDate(iso) {
   const d = new Date(iso);
-  return d.toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })
-    + ' ' + d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
+  return (
+    d.toLocaleDateString(undefined, {
+      day: "numeric",
+      month: "short",
+      year: "numeric",
+    }) +
+    " " +
+    d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" })
+  );
 }
 
 // ─────────────────────────────────────────────
 // Settings
 // ─────────────────────────────────────────────
 const settings = {
-  get voiceEnabled() { return localStorage.getItem('apnea_voice') !== 'off'; },
-  set voiceEnabled(v) { localStorage.setItem('apnea_voice', v ? 'on' : 'off'); },
+  get voiceEnabled() {
+    return localStorage.getItem("apnea_voice") !== "off";
+  },
+  set voiceEnabled(v) {
+    localStorage.setItem("apnea_voice", v ? "on" : "off");
+  },
 };
 
 // ─────────────────────────────────────────────
 // Audio clips
 // ─────────────────────────────────────────────
-const audioExt = new Audio().canPlayType('audio/webm; codecs=opus') !== '' ? 'opus' : 'mp3';
+const audioExt =
+  new Audio().canPlayType("audio/webm; codecs=opus") !== "" ? "opus" : "mp3";
 
 const CLIP_KEYS = [
-  'ready', 'prep', 'rest', 'after_contraction', 'one_breath',
-  'recovery', 'complete', 'tap_contraction',
-  'n1', 'n2', 'n3', 'n5', 'n10',
+  "ready",
+  "prep",
+  "rest",
+  "after_contraction",
+  "one_breath",
+  "recovery",
+  "complete",
+  "tap_contraction",
+  "n1",
+  "n2",
+  "n3",
+  "n5",
+  "n10",
   ...Array.from({ length: 20 }, (_, i) => `hold_${i + 1}`),
 ];
 
 const clips = {};
-CLIP_KEYS.forEach(key => {
+CLIP_KEYS.forEach((key) => {
   const a = new Audio(`audio/${key}.${audioExt}`);
-  a.preload = 'auto';
+  a.preload = "auto";
   clips[key] = a;
 });
 
@@ -82,7 +114,11 @@ let _currentClip = null;
 
 function speak(key, thenKey = null) {
   if (!settings.voiceEnabled) return;
-  if (_currentClip) { _currentClip.onended = null; _currentClip.pause(); _currentClip.currentTime = 0; }
+  if (_currentClip) {
+    _currentClip.onended = null;
+    _currentClip.pause();
+    _currentClip.currentTime = 0;
+  }
   const audio = clips[key];
   if (!audio) return;
   audio.currentTime = 0;
@@ -96,25 +132,25 @@ function speak(key, thenKey = null) {
 // ─────────────────────────────────────────────
 class SessionEngine {
   constructor(table, { onTick, onPhaseChange, onComplete }) {
-    this.table        = table;
-    this.onTick       = onTick;
+    this.table = table;
+    this.onTick = onTick;
     this.onPhaseChange = onPhaseChange;
-    this.onComplete   = onComplete;
+    this.onComplete = onComplete;
 
-    this.phases          = this._buildPhases();
-    this.phaseIdx        = -1;
-    this.timeLeft        = 0;
-    this.elapsed         = 0;
-    this.timer           = null;
-    this.paused          = false;
-    this.startTime       = Date.now();
+    this.phases = this._buildPhases();
+    this.phaseIdx = -1;
+    this.timeLeft = 0;
+    this.elapsed = 0;
+    this.timer = null;
+    this.paused = false;
+    this.startTime = Date.now();
     this.completedRounds = 0;
   }
 
   get totalRounds() {
     const p = this.table.params;
-    if (this.table.type === 'wonka')  return p.breathholds;
-    if (this.table.type === 'custom') return p.rounds.length;
+    if (this.table.type === "wonka") return p.breathholds;
+    if (this.table.type === "custom") return p.rounds.length;
     return p.rounds;
   }
 
@@ -122,27 +158,40 @@ class SessionEngine {
     const { type, params: p } = this.table;
     const phases = [];
 
-    if (type === 'wonka') {
+    if (type === "wonka") {
       if (p.prepTime > 0)
-        phases.push({ kind: 'prep', dur: p.prepTime, round: 0 });
+        phases.push({ kind: "prep", dur: p.prepTime, round: 0 });
 
       for (let i = 0; i < p.breathholds; i++) {
-        phases.push({ kind: 'hold',      dur: null, round: i + 1, countUp: true });
-        phases.push({ kind: 'countdown', dur: p.countdownAfterContraction, round: i + 1 });
+        phases.push({ kind: "hold", dur: null, round: i + 1, countUp: true });
+        phases.push({
+          kind: "countdown",
+          dur: p.countdownAfterContraction,
+          round: i + 1,
+        });
         if (i < p.breathholds - 1)
-          phases.push({ kind: 'breath', dur: null, round: i + 1, userTriggered: true });
+          phases.push({
+            kind: "breath",
+            dur: null,
+            round: i + 1,
+            userTriggered: true,
+          });
       }
       // single cooldown after all rounds
       if (p.cooldownTime > 0)
-        phases.push({ kind: 'cooldown', dur: p.cooldownTime, round: p.breathholds });
+        phases.push({
+          kind: "cooldown",
+          dur: p.cooldownTime,
+          round: p.breathholds,
+        });
     } else {
       const rounds = this._buildRounds();
-      phases.push({ kind: 'ready', dur: 5, round: 0 });
+      phases.push({ kind: "ready", dur: 5, round: 0 });
 
       for (let i = 0; i < rounds.length; i++) {
-        phases.push({ kind: 'hold', dur: rounds[i].hold, round: i + 1 });
+        phases.push({ kind: "hold", dur: rounds[i].hold, round: i + 1 });
         if (i < rounds.length - 1)
-          phases.push({ kind: 'rest', dur: rounds[i].rest, round: i + 1 });
+          phases.push({ kind: "rest", dur: rounds[i].rest, round: i + 1 });
       }
     }
 
@@ -151,35 +200,39 @@ class SessionEngine {
 
   _buildRounds() {
     const { type, params: p } = this.table;
-    if (type === 'co2')
+    if (type === "co2")
       return Array.from({ length: p.rounds }, (_, i) => ({
         hold: p.holdTime,
         rest: Math.max(10, p.startRest - i * p.restDecrement),
       }));
-    if (type === 'o2')
+    if (type === "o2")
       return Array.from({ length: p.rounds }, (_, i) => ({
         hold: p.startHold + i * p.holdIncrement,
         rest: p.restTime,
       }));
-    if (type === 'custom')
-      return p.rounds;
+    if (type === "custom") return p.rounds;
     return [];
   }
 
-  start() { this._enter(0); }
+  start() {
+    this._enter(0);
+  }
 
   _enter(idx) {
-    if (idx >= this.phases.length) { this._complete(); return; }
+    if (idx >= this.phases.length) {
+      this._complete();
+      return;
+    }
 
     this.phaseIdx = idx;
     const ph = this.phases[idx];
 
     if (ph.countUp) {
-      this.elapsed  = 0;
+      this.elapsed = 0;
       this.timeLeft = null;
     } else {
       this.timeLeft = ph.dur;
-      this.elapsed  = 0;
+      this.elapsed = 0;
     }
 
     this._announce(ph);
@@ -206,7 +259,7 @@ class SessionEngine {
         this.onTick(this._state());
         if (t <= 0) {
           clearInterval(this.timer);
-          if (ph.kind === 'hold') this.completedRounds++;
+          if (ph.kind === "hold") this.completedRounds++;
           this._enter(idx + 1);
         }
       }, 1000);
@@ -220,7 +273,7 @@ class SessionEngine {
 
   signalContraction() {
     const ph = this.phases[this.phaseIdx];
-    if (ph?.kind === 'hold' && ph.countUp) {
+    if (ph?.kind === "hold" && ph.countUp) {
       clearInterval(this.timer);
       this.completedRounds++;
       this._enter(this.phaseIdx + 1);
@@ -239,21 +292,21 @@ class SessionEngine {
 
   _complete() {
     clearInterval(this.timer);
-    speak('complete');
+    speak("complete");
     this._persist(true);
     this.onComplete(this._state());
   }
 
   _persist(completed) {
     db.saveSession({
-      id:              uid(),
-      tableId:         this.table.id,
-      tableName:       this.table.name,
-      tableType:       this.table.type,
-      date:            new Date().toISOString(),
+      id: uid(),
+      tableId: this.table.id,
+      tableName: this.table.name,
+      tableType: this.table.type,
+      date: new Date().toISOString(),
       completedRounds: this.completedRounds,
-      totalRounds:     this.totalRounds,
-      totalDuration:   Math.round((Date.now() - this.startTime) / 1000),
+      totalRounds: this.totalRounds,
+      totalDuration: Math.round((Date.now() - this.startTime) / 1000),
       completed,
     });
   }
@@ -261,32 +314,35 @@ class SessionEngine {
   _announce(ph) {
     const n = ph.round;
     const key = {
-      ready:     'ready',
-      prep:      'prep',
-      rest:      'rest',
-      countdown: 'after_contraction',
-      breath:    'one_breath',
-      cooldown:  'recovery',
+      ready: "ready",
+      prep: "prep",
+      rest: "rest",
+      countdown: "after_contraction",
+      breath: "one_breath",
+      cooldown: "recovery",
     }[ph.kind];
-    if (key) { speak(key); return; }
-    if (ph.kind === 'hold') {
+    if (key) {
+      speak(key);
+      return;
+    }
+    if (ph.kind === "hold") {
       const holdKey = n >= 1 && n <= 20 ? `hold_${n}` : null;
-      if (holdKey) speak(holdKey, ph.countUp ? 'tap_contraction' : null);
+      if (holdKey) speak(holdKey, ph.countUp ? "tap_contraction" : null);
     }
   }
 
   _state() {
-    const ph   = this.phases[this.phaseIdx] || {};
+    const ph = this.phases[this.phaseIdx] || {};
     const next = this.phases[this.phaseIdx + 1] || null;
     return {
-      phase:           ph,
+      phase: ph,
       next,
-      timeLeft:        this.timeLeft,
-      elapsed:         this.elapsed,
+      timeLeft: this.timeLeft,
+      elapsed: this.elapsed,
       completedRounds: this.completedRounds,
-      totalRounds:     this.totalRounds,
-      paused:          this.paused,
-      duration:        Math.round((Date.now() - this.startTime) / 1000),
+      totalRounds: this.totalRounds,
+      paused: this.paused,
+      duration: Math.round((Date.now() - this.startTime) / 1000),
     };
   }
 }
@@ -300,40 +356,40 @@ let currentSession = null;
 // Router
 // ─────────────────────────────────────────────
 function navigate(view, params = {}) {
-  const main      = document.getElementById('main');
-  const title     = document.getElementById('header-title');
-  const btnBack   = document.getElementById('btn-back');
-  const btnHist   = document.getElementById('btn-history');
+  const main = document.getElementById("main");
+  const title = document.getElementById("header-title");
+  const btnBack = document.getElementById("btn-back");
+  const btnHist = document.getElementById("btn-history");
 
-  btnBack.style.visibility = view === 'tables' ? 'hidden' : '';
-  btnBack.style.pointerEvents = view === 'tables' ? 'none' : '';
-  btnHist.style.visibility = view !== 'tables' ? 'hidden' : '';
-  btnHist.style.pointerEvents = view !== 'tables' ? 'none' : '';
+  btnBack.style.visibility = view === "tables" ? "hidden" : "";
+  btnBack.style.pointerEvents = view === "tables" ? "none" : "";
+  btnHist.style.visibility = view !== "tables" ? "hidden" : "";
+  btnHist.style.pointerEvents = view !== "tables" ? "none" : "";
 
   btnBack.onclick = () => {
-    if (view === 'session' && currentSession) {
-      if (!confirm('Stop the current session?')) return;
+    if (view === "session" && currentSession) {
+      if (!confirm("Stop the current session?")) return;
       currentSession.stop();
       currentSession = null;
     }
-    navigate('tables');
+    navigate("tables");
   };
 
   switch (view) {
-    case 'tables':
-      title.textContent = 'Apnea Dry Training Tables';
+    case "tables":
+      title.textContent = "Apnea Dry Training Tables";
       renderTables(main);
       break;
-    case 'edit':
-      title.textContent = params.id ? 'Edit Table' : 'New Table';
+    case "edit":
+      title.textContent = params.id ? "Edit Table" : "New Table";
       renderEdit(main, params.id || null);
       break;
-    case 'session':
-      title.textContent = 'Session';
+    case "session":
+      title.textContent = "Session";
       renderSession(main, params.tableId);
       break;
-    case 'history':
-      title.textContent = 'History';
+    case "history":
+      title.textContent = "History";
       renderHistory(main);
       break;
   }
@@ -343,46 +399,63 @@ function navigate(view, params = {}) {
 // View helpers
 // ─────────────────────────────────────────────
 function typeIcon(type) {
-  const labels = { co2: 'CO₂', o2: 'O₂', wonka: 'W', custom: '···' };
-  const cls    = { co2: 'icon-co2', o2: 'icon-o2', wonka: 'icon-wonka', custom: 'icon-custom' };
-  return `<div class="table-icon ${cls[type] || ''}">${labels[type] || '?'}</div>`;
+  const labels = { co2: "CO₂", o2: "O₂", wonka: "W", custom: "···" };
+  const cls = {
+    co2: "icon-co2",
+    o2: "icon-o2",
+    wonka: "icon-wonka",
+    custom: "icon-custom",
+  };
+  return `<div class="table-icon ${cls[type] || ""}">${labels[type] || "?"}</div>`;
 }
 
 function tableSummary(t) {
   const p = t.params;
   switch (t.type) {
-    case 'co2':
-      return `${p.rounds} rounds · hold ${fmtTime(p.holdTime)} · rest `
-           + `${fmtTime(p.startRest)} → ${fmtTime(Math.max(10, p.startRest - (p.rounds - 1) * p.restDecrement))}`;
-    case 'o2':
-      return `${p.rounds} rounds · hold `
-           + `${fmtTime(p.startHold)} → ${fmtTime(p.startHold + (p.rounds - 1) * p.holdIncrement)}`
-           + ` · rest ${fmtTime(p.restTime)}`;
-    case 'wonka':
+    case "co2":
+      return (
+        `${p.rounds} rounds · hold ${fmtTime(p.holdTime)} · rest ` +
+        `${fmtTime(p.startRest)} → ${fmtTime(Math.max(10, p.startRest - (p.rounds - 1) * p.restDecrement))}`
+      );
+    case "o2":
+      return (
+        `${p.rounds} rounds · hold ` +
+        `${fmtTime(p.startHold)} → ${fmtTime(p.startHold + (p.rounds - 1) * p.holdIncrement)}` +
+        ` · rest ${fmtTime(p.restTime)}`
+      );
+    case "wonka":
       return `${p.breathholds} breathholds · countdown ${fmtTime(p.countdownAfterContraction)}`;
-    case 'custom':
+    case "custom":
       return `${p.rounds.length} rounds`;
     default:
-      return '';
+      return "";
   }
 }
 
 function phaseLabel(kind) {
-  return { ready: 'Get Ready', prep: 'Preparation', hold: 'Hold',
-           rest: 'Rest', countdown: 'After Contraction',
-           breath: 'One Breath', cooldown: 'Recovery' }[kind] || kind;
+  return (
+    {
+      ready: "Get Ready",
+      prep: "Preparation",
+      hold: "Hold",
+      rest: "Rest",
+      countdown: "After Contraction",
+      breath: "One Breath",
+      cooldown: "Recovery",
+    }[kind] || kind
+  );
 }
 
 function phaseClass(kind) {
-  if (kind === 'hold' || kind === 'countdown') return 'phase-hold';
-  if (kind === 'rest' || kind === 'cooldown')  return 'phase-rest';
-  return 'phase-prep';
+  if (kind === "hold" || kind === "countdown") return "phase-hold";
+  if (kind === "rest" || kind === "cooldown") return "phase-rest";
+  return "phase-prep";
 }
 
 function nextLabel(next) {
-  if (!next) return '';
+  if (!next) return "";
   if (next.countUp) return `Next: ${phaseLabel(next.kind)}`;
-  return `Next: ${phaseLabel(next.kind)}${next.dur ? ' ' + fmtTime(next.dur) : ''}`;
+  return `Next: ${phaseLabel(next.kind)}${next.dur ? " " + fmtTime(next.dur) : ""}`;
 }
 
 // ─────────────────────────────────────────────
@@ -390,7 +463,7 @@ function nextLabel(next) {
 // ─────────────────────────────────────────────
 function renderTables(main) {
   const tables = db.getTables();
-  let html = '';
+  let html = "";
 
   if (tables.length === 0) {
     html = `<div class="empty-state">
@@ -398,8 +471,11 @@ function renderTables(main) {
       <p>Tap + to create your first training table.</p>
     </div>`;
   } else {
-    html = `<div class="card">` +
-      tables.map(t => `
+    html =
+      `<div class="card">` +
+      tables
+        .map(
+          (t) => `
         <div class="card-row" data-id="${t.id}">
           ${typeIcon(t.type)}
           <div class="table-info">
@@ -409,16 +485,19 @@ function renderTables(main) {
           <button class="btn-delete-row" data-id="${t.id}" title="Delete">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4h6v2"/></svg>
           </button>
-        </div>`).join('') +
+        </div>`,
+        )
+        .join("") +
       `</div>`;
   }
 
-  main.innerHTML = html
-    + `<div class="list-bottom-pad"></div>`
-    + `<button class="fab" id="btn-new" title="New table">+</button>`;
+  main.innerHTML =
+    html +
+    `<div class="list-bottom-pad"></div>` +
+    `<button class="fab" id="btn-new" title="New table">+</button>`;
 
-  main.querySelectorAll('.btn-delete-row').forEach(btn => {
-    btn.addEventListener('click', e => {
+  main.querySelectorAll(".btn-delete-row").forEach((btn) => {
+    btn.addEventListener("click", (e) => {
       e.stopPropagation();
       const table = db.getTable(btn.dataset.id);
       if (table && confirm(`Delete "${table.name}"?`)) {
@@ -428,19 +507,31 @@ function renderTables(main) {
     });
   });
 
-  main.querySelectorAll('.card-row').forEach(row => {
+  main.querySelectorAll(".card-row").forEach((row) => {
     // tap → start session
-    row.addEventListener('click', () => navigate('session', { tableId: row.dataset.id }));
+    row.addEventListener("click", () =>
+      navigate("session", { tableId: row.dataset.id }),
+    );
 
     // long-press → edit
     let pressTimer;
-    row.addEventListener('pointerdown',  () => { pressTimer = setTimeout(() => navigate('edit', { id: row.dataset.id }), 600); });
-    row.addEventListener('pointerup',    () => clearTimeout(pressTimer));
-    row.addEventListener('pointerleave', () => clearTimeout(pressTimer));
-    row.addEventListener('contextmenu',  e  => { e.preventDefault(); navigate('edit', { id: row.dataset.id }); });
+    row.addEventListener("pointerdown", () => {
+      pressTimer = setTimeout(
+        () => navigate("edit", { id: row.dataset.id }),
+        600,
+      );
+    });
+    row.addEventListener("pointerup", () => clearTimeout(pressTimer));
+    row.addEventListener("pointerleave", () => clearTimeout(pressTimer));
+    row.addEventListener("contextmenu", (e) => {
+      e.preventDefault();
+      navigate("edit", { id: row.dataset.id });
+    });
   });
 
-  document.getElementById('btn-new').addEventListener('click', () => navigate('edit', {}));
+  document
+    .getElementById("btn-new")
+    .addEventListener("click", () => navigate("edit", {}));
 }
 
 // ─────────────────────────────────────────────
@@ -452,44 +543,44 @@ function timePairHtml(name, totalSec = 0) {
   return `<div class="time-pair">
     <input type="number" id="${name}_m" min="0" max="99"  value="${m}" placeholder="0">
     <span>:</span>
-    <input type="number" id="${name}_s" min="0" max="59"  value="${s.toString().padStart(2, '0')}" placeholder="00">
+    <input type="number" id="${name}_s" min="0" max="59"  value="${s.toString().padStart(2, "0")}" placeholder="00">
   </div>`;
 }
 
 function getTimePair(name) {
-  const m = parseInt(document.getElementById(name + '_m')?.value) || 0;
-  const s = parseInt(document.getElementById(name + '_s')?.value) || 0;
+  const m = parseInt(document.getElementById(name + "_m")?.value) || 0;
+  const s = parseInt(document.getElementById(name + "_s")?.value) || 0;
   return m * 60 + s;
 }
 
 function renderEdit(main, id) {
   const table = id ? db.getTable(id) : null;
-  const type  = table?.type || 'co2';
+  const type = table?.type || "co2";
 
   main.innerHTML = `
     <div class="form-group">
       <label class="form-label">Name</label>
-      <input class="form-input" id="f-name" value="${table?.name || ''}" placeholder="Table name">
+      <input class="form-input" id="f-name" value="${table?.name || ""}" placeholder="Table name">
     </div>
     <div class="form-group">
       <label class="form-label">Type</label>
       <select class="form-input" id="f-type">
-        <option value="co2"    ${type==='co2'    ?'selected':''}>CO₂ Tolerance</option>
-        <option value="o2"     ${type==='o2'     ?'selected':''}>O₂ Efficiency</option>
-        <option value="wonka"  ${type==='wonka'  ?'selected':''}>Wonka</option>
-        <option value="custom" ${type==='custom' ?'selected':''}>Custom</option>
+        <option value="co2"    ${type === "co2" ? "selected" : ""}>CO₂ Tolerance</option>
+        <option value="o2"     ${type === "o2" ? "selected" : ""}>O₂ Efficiency</option>
+        <option value="wonka"  ${type === "wonka" ? "selected" : ""}>Wonka</option>
+        <option value="custom" ${type === "custom" ? "selected" : ""}>Custom</option>
       </select>
     </div>
     <div id="type-fields"></div>
-    ${id ? `<div class="delete-zone"><button class="btn btn-danger" id="btn-delete">Delete Table</button></div>` : ''}
+    ${id ? `<div class="delete-zone"><button class="btn btn-danger" id="btn-delete">Delete Table</button></div>` : ""}
     <div style="height:80px"></div>
     <button class="fab" id="btn-save" title="Save">✓</button>`;
 
   function renderTypeFields(t) {
-    const p  = table?.params || {};
-    const el = document.getElementById('type-fields');
+    const p = table?.params || {};
+    const el = document.getElementById("type-fields");
 
-    if (t === 'co2') {
+    if (t === "co2") {
       el.innerHTML = `
         <div class="form-group">
           <label class="form-label">Rounds</label>
@@ -497,18 +588,17 @@ function renderEdit(main, id) {
         </div>
         <div class="form-group">
           <label class="form-label">Hold Time (fixed)</label>
-          ${timePairHtml('f-holdTime', p.holdTime ?? 90)}
+          ${timePairHtml("f-holdTime", p.holdTime ?? 90)}
         </div>
         <div class="form-group">
           <label class="form-label">Starting Rest Time</label>
-          ${timePairHtml('f-startRest', p.startRest ?? 120)}
+          ${timePairHtml("f-startRest", p.startRest ?? 120)}
         </div>
         <div class="form-group">
           <label class="form-label">Rest Decrement per Round (sec)</label>
           <input class="form-input" id="f-restDecrement" type="number" min="0" max="120" value="${p.restDecrement ?? 15}">
         </div>`;
-
-    } else if (t === 'o2') {
+    } else if (t === "o2") {
       el.innerHTML = `
         <div class="form-group">
           <label class="form-label">Rounds</label>
@@ -516,7 +606,7 @@ function renderEdit(main, id) {
         </div>
         <div class="form-group">
           <label class="form-label">Starting Hold Time</label>
-          ${timePairHtml('f-startHold', p.startHold ?? 60)}
+          ${timePairHtml("f-startHold", p.startHold ?? 60)}
         </div>
         <div class="form-group">
           <label class="form-label">Hold Increment per Round (sec)</label>
@@ -524,10 +614,9 @@ function renderEdit(main, id) {
         </div>
         <div class="form-group">
           <label class="form-label">Rest Time (fixed)</label>
-          ${timePairHtml('f-restTime', p.restTime ?? 120)}
+          ${timePairHtml("f-restTime", p.restTime ?? 120)}
         </div>`;
-
-    } else if (t === 'wonka') {
+    } else if (t === "wonka") {
       el.innerHTML = `
         <div class="form-group">
           <label class="form-label">Number of Breathholds</label>
@@ -535,25 +624,27 @@ function renderEdit(main, id) {
         </div>
         <div class="form-group">
           <label class="form-label">Preparation Time</label>
-          ${timePairHtml('f-prepTime', p.prepTime ?? 120)}
+          ${timePairHtml("f-prepTime", p.prepTime ?? 120)}
         </div>
         <div class="form-group">
           <label class="form-label">Countdown After 1st Contraction</label>
-          ${timePairHtml('f-countdownAfterContraction', p.countdownAfterContraction ?? 30)}
+          ${timePairHtml("f-countdownAfterContraction", p.countdownAfterContraction ?? 30)}
         </div>
         <div class="form-group">
           <label class="form-label">Final Cooldown Time (after last round)</label>
-          ${timePairHtml('f-cooldownTime', p.cooldownTime ?? 120)}
+          ${timePairHtml("f-cooldownTime", p.cooldownTime ?? 120)}
         </div>`;
-
-    } else if (t === 'custom') {
-      const rounds = (p.rounds && p.rounds.length > 0) ? p.rounds : [{ hold: 90, rest: 120 }];
+    } else if (t === "custom") {
+      const rounds =
+        p.rounds && p.rounds.length > 0 ? p.rounds : [{ hold: 90, rest: 120 }];
       renderCustomRounds(el, rounds);
     }
   }
 
   function renderCustomRounds(container, rounds) {
-    const rows = rounds.map((r, i) => `
+    const rows = rounds
+      .map(
+        (r, i) => `
       <div class="round-row">
         <span class="round-num">${i + 1}</span>
         <span class="round-label">Hold</span>
@@ -562,7 +653,9 @@ function renderEdit(main, id) {
         <input class="round-time" type="text" value="${fmtTime(r.rest)}" placeholder="2:00">
         <span class="round-sep"></span>
         <button type="button" class="btn-remove" data-idx="${i}" title="Remove">✕</button>
-      </div>`).join('');
+      </div>`,
+      )
+      .join("");
 
     container.innerHTML = `
       <div class="form-group">
@@ -571,14 +664,17 @@ function renderEdit(main, id) {
         <button type="button" class="btn-add-round" id="btn-add-round">+ Add Round</button>
       </div>`;
 
-    document.getElementById('btn-add-round').addEventListener('click', () => {
+    document.getElementById("btn-add-round").addEventListener("click", () => {
       const current = readCustomRounds();
-      const last    = current[current.length - 1] || { hold: 90, rest: 120 };
-      renderCustomRounds(container, [...current, { hold: last.hold, rest: last.rest }]);
+      const last = current[current.length - 1] || { hold: 90, rest: 120 };
+      renderCustomRounds(container, [
+        ...current,
+        { hold: last.hold, rest: last.rest },
+      ]);
     });
 
-    container.querySelectorAll('.btn-remove').forEach(btn => {
-      btn.addEventListener('click', () => {
+    container.querySelectorAll(".btn-remove").forEach((btn) => {
+      btn.addEventListener("click", () => {
         const current = readCustomRounds();
         if (current.length <= 1) return;
         current.splice(parseInt(btn.dataset.idx), 1);
@@ -588,55 +684,68 @@ function renderEdit(main, id) {
   }
 
   function readCustomRounds() {
-    return Array.from(document.querySelectorAll('#rounds-editor .round-row')).map(row => {
-      const inputs = row.querySelectorAll('.round-time');
-      return { hold: parseTimeStr(inputs[0]?.value), rest: parseTimeStr(inputs[1]?.value) };
+    return Array.from(
+      document.querySelectorAll("#rounds-editor .round-row"),
+    ).map((row) => {
+      const inputs = row.querySelectorAll(".round-time");
+      return {
+        hold: parseTimeStr(inputs[0]?.value),
+        rest: parseTimeStr(inputs[1]?.value),
+      };
     });
   }
 
   renderTypeFields(type);
-  document.getElementById('f-type').addEventListener('change', e => renderTypeFields(e.target.value));
+  document
+    .getElementById("f-type")
+    .addEventListener("change", (e) => renderTypeFields(e.target.value));
 
-  document.getElementById('btn-save').addEventListener('click', () => {
-    const name = document.getElementById('f-name').value.trim();
-    if (!name) { alert('Please enter a name.'); return; }
-    const t = document.getElementById('f-type').value;
+  document.getElementById("btn-save").addEventListener("click", () => {
+    const name = document.getElementById("f-name").value.trim();
+    if (!name) {
+      alert("Please enter a name.");
+      return;
+    }
+    const t = document.getElementById("f-type").value;
 
     let params;
-    if (t === 'co2') {
+    if (t === "co2") {
       params = {
-        rounds:        parseInt(document.getElementById('f-rounds').value) || 8,
-        holdTime:      getTimePair('f-holdTime'),
-        startRest:     getTimePair('f-startRest'),
-        restDecrement: parseInt(document.getElementById('f-restDecrement').value) || 0,
+        rounds: parseInt(document.getElementById("f-rounds").value) || 8,
+        holdTime: getTimePair("f-holdTime"),
+        startRest: getTimePair("f-startRest"),
+        restDecrement:
+          parseInt(document.getElementById("f-restDecrement").value) || 0,
       };
-    } else if (t === 'o2') {
+    } else if (t === "o2") {
       params = {
-        rounds:        parseInt(document.getElementById('f-rounds').value) || 8,
-        startHold:     getTimePair('f-startHold'),
-        holdIncrement: parseInt(document.getElementById('f-holdIncrement').value) || 0,
-        restTime:      getTimePair('f-restTime'),
+        rounds: parseInt(document.getElementById("f-rounds").value) || 8,
+        startHold: getTimePair("f-startHold"),
+        holdIncrement:
+          parseInt(document.getElementById("f-holdIncrement").value) || 0,
+        restTime: getTimePair("f-restTime"),
       };
-    } else if (t === 'wonka') {
+    } else if (t === "wonka") {
       params = {
-        breathholds:                parseInt(document.getElementById('f-breathholds').value) || 5,
-        prepTime:                   getTimePair('f-prepTime'),
-        countdownAfterContraction:  getTimePair('f-countdownAfterContraction'),
-        cooldownTime:               getTimePair('f-cooldownTime'),
+        breathholds:
+          parseInt(document.getElementById("f-breathholds").value) || 5,
+        prepTime: getTimePair("f-prepTime"),
+        countdownAfterContraction: getTimePair("f-countdownAfterContraction"),
+        cooldownTime: getTimePair("f-cooldownTime"),
       };
     } else {
       params = { rounds: readCustomRounds() };
     }
 
     db.saveTable({ id: table?.id || uid(), name, type: t, params });
-    navigate('tables');
+    navigate("tables");
   });
 
   if (id) {
-    document.getElementById('btn-delete')?.addEventListener('click', () => {
+    document.getElementById("btn-delete")?.addEventListener("click", () => {
       if (confirm(`Delete "${table.name}"?`)) {
         db.deleteTable(id);
-        navigate('tables');
+        navigate("tables");
       }
     });
   }
@@ -647,7 +756,10 @@ function renderEdit(main, id) {
 // ─────────────────────────────────────────────
 function renderSession(main, tableId) {
   const table = db.getTable(tableId);
-  if (!table) { navigate('tables'); return; }
+  if (!table) {
+    navigate("tables");
+    return;
+  }
 
   main.innerHTML = `
     <div class="session-wrap">
@@ -663,32 +775,46 @@ function renderSession(main, tableId) {
       </div>
     </div>`;
 
-  function updateUI({ phase, next, timeLeft, elapsed, completedRounds, totalRounds, paused }) {
-    document.getElementById('s-round').textContent =
-      phase.round ? `Round ${phase.round} of ${totalRounds}` : '';
+  function updateUI({
+    phase,
+    next,
+    timeLeft,
+    elapsed,
+    completedRounds,
+    totalRounds,
+    paused,
+  }) {
+    document.getElementById("s-round").textContent = phase.round
+      ? `Round ${phase.round} of ${totalRounds}`
+      : "";
 
-    const phaseEl = document.getElementById('s-phase');
-    phaseEl.textContent  = phaseLabel(phase.kind);
-    phaseEl.className    = `session-phase ${phaseClass(phase.kind)}`;
+    const phaseEl = document.getElementById("s-phase");
+    phaseEl.textContent = phaseLabel(phase.kind);
+    phaseEl.className = `session-phase ${phaseClass(phase.kind)}`;
 
-    document.getElementById('s-timer').textContent =
-      phase.countUp ? fmtTime(elapsed) : (phase.userTriggered ? '–' : fmtTime(timeLeft ?? 0));
+    document.getElementById("s-timer").textContent = phase.countUp
+      ? fmtTime(elapsed)
+      : phase.userTriggered
+        ? "–"
+        : fmtTime(timeLeft ?? 0);
 
-    document.getElementById('s-next').textContent = nextLabel(next);
+    document.getElementById("s-next").textContent = nextLabel(next);
 
-    document.getElementById('btn-contraction').hidden =
-      !(phase.kind === 'hold' && phase.countUp);
+    document.getElementById("btn-contraction").hidden = !(
+      phase.kind === "hold" && phase.countUp
+    );
 
-    document.getElementById('btn-ready').hidden =
-      !phase.userTriggered;
+    document.getElementById("btn-ready").hidden = !phase.userTriggered;
 
-    document.getElementById('btn-pause').textContent = paused ? 'Resume' : 'Pause';
+    document.getElementById("btn-pause").textContent = paused
+      ? "Resume"
+      : "Pause";
   }
 
   currentSession = new SessionEngine(table, {
-    onTick:        updateUI,
+    onTick: updateUI,
     onPhaseChange: updateUI,
-    onComplete:    ({ completedRounds, totalRounds, duration }) => {
+    onComplete: ({ completedRounds, totalRounds, duration }) => {
       main.innerHTML = `
         <div class="session-complete">
           <div class="checkmark">✓</div>
@@ -696,24 +822,32 @@ function renderSession(main, tableId) {
           <p>${completedRounds} of ${totalRounds} rounds completed.<br>Total time: ${fmtTime(duration)}.</p>
           <button class="btn btn-primary" id="btn-done">Done</button>
         </div>`;
-      document.getElementById('btn-done').addEventListener('click', () => navigate('tables'));
+      document
+        .getElementById("btn-done")
+        .addEventListener("click", () => navigate("tables"));
       currentSession = null;
     },
   });
 
-  document.getElementById('btn-contraction').addEventListener('click', () => currentSession?.signalContraction());
-  document.getElementById('btn-ready').addEventListener('click', () => currentSession?.signalReady());
+  document
+    .getElementById("btn-contraction")
+    .addEventListener("click", () => currentSession?.signalContraction());
+  document
+    .getElementById("btn-ready")
+    .addEventListener("click", () => currentSession?.signalReady());
 
-  document.getElementById('btn-pause').addEventListener('click', () => {
+  document.getElementById("btn-pause").addEventListener("click", () => {
     const paused = currentSession?.togglePause();
-    document.getElementById('btn-pause').textContent = paused ? 'Resume' : 'Pause';
+    document.getElementById("btn-pause").textContent = paused
+      ? "Resume"
+      : "Pause";
   });
 
-  document.getElementById('btn-stop').addEventListener('click', () => {
-    if (confirm('Stop the session?')) {
+  document.getElementById("btn-stop").addEventListener("click", () => {
+    if (confirm("Stop the session?")) {
       currentSession?.stop();
       currentSession = null;
-      navigate('tables');
+      navigate("tables");
     }
   });
 
@@ -734,11 +868,12 @@ function renderHistory(main) {
     return;
   }
 
-  const rows = sessions.map(s => {
-    const badge = s.completed
-      ? `<span class="badge-ok">✓ Complete</span>`
-      : `<span class="badge-partial">${s.completedRounds}/${s.totalRounds} rounds</span>`;
-    return `
+  const rows = sessions
+    .map((s) => {
+      const badge = s.completed
+        ? `<span class="badge-ok">✓ Complete</span>`
+        : `<span class="badge-partial">${s.completedRounds}/${s.totalRounds} rounds</span>`;
+      return `
       <div class="history-item">
         <div class="history-top">
           <span class="history-name">${s.tableName}</span>
@@ -752,7 +887,8 @@ function renderHistory(main) {
           ${s.tableType.toUpperCase()}
         </div>
       </div>`;
-  }).join('');
+    })
+    .join("");
 
   main.innerHTML = `<div class="card">${rows}</div>`;
 }
@@ -760,32 +896,78 @@ function renderHistory(main) {
 // ─────────────────────────────────────────────
 // Init
 // ─────────────────────────────────────────────
-const SVG_SOUND_ON  = `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/></svg>`;
+function showDisclaimer() {
+  if (localStorage.getItem("apnea_disclaimer_accepted") === "true") return;
+
+  const overlay = document.createElement("div");
+  overlay.className = "modal-overlay";
+  overlay.innerHTML = `
+    <div class="modal-content">
+      <h2>
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+        Safety Warning
+      </h2>
+      <p>Breath holding exercises carry inherent risks. By using this app, you agree to follow these safety rules:</p>
+      <ul>
+        <li><strong>Never</strong> train in or near water (pools, tubs, etc.). Shallow water blackout can be fatal.</li>
+        <li>Only perform <strong>dry training</strong> on a bed, sofa, or floor.</li>
+        <li>Do not train without proper knowledge or certification from a recognized apnea organization.</li>
+        <li>Consult a physician before starting any breath-holding practice.</li>
+      </ul>
+      <button class="btn btn-primary" id="btn-accept-disclaimer">I Understand & Accept</button>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+
+  document
+    .getElementById("btn-accept-disclaimer")
+    .addEventListener("click", () => {
+      localStorage.setItem("apnea_disclaimer_accepted", "true");
+      overlay.remove();
+    });
+}
+
+const SVG_SOUND_ON = `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/></svg>`;
 const SVG_SOUND_OFF = `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><line x1="23" y1="9" x2="17" y2="15"/><line x1="17" y1="9" x2="23" y2="15"/></svg>`;
 
-const btnSound = document.getElementById('btn-sound');
+const btnSound = document.getElementById("btn-sound");
 function updateSoundBtn() {
   btnSound.innerHTML = settings.voiceEnabled ? SVG_SOUND_ON : SVG_SOUND_OFF;
-  btnSound.style.opacity = settings.voiceEnabled ? '1' : '0.4';
+  btnSound.style.opacity = settings.voiceEnabled ? "1" : "0.4";
 }
-btnSound.addEventListener('click', () => {
+btnSound.addEventListener("click", () => {
   settings.voiceEnabled = !settings.voiceEnabled;
   updateSoundBtn();
 });
 updateSoundBtn();
 
-document.getElementById('btn-history').addEventListener('click', () => navigate('history'));
+document
+  .getElementById("btn-history")
+  .addEventListener("click", () => navigate("history"));
 
-document.addEventListener('keydown', e => {
-  if (e.code !== 'Space' || e.repeat) return;
+document.addEventListener("keydown", (e) => {
+  if (e.code !== "Space" || e.repeat) return;
   const t = e.target;
-  if (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT') return;
-  const btnContraction = document.getElementById('btn-contraction');
-  const btnReady       = document.getElementById('btn-ready');
-  const btnDone        = document.getElementById('btn-done');
-  if (btnContraction && !btnContraction.hidden) { e.preventDefault(); btnContraction.click(); }
-  else if (btnReady && !btnReady.hidden)        { e.preventDefault(); btnReady.click(); }
-  else if (btnDone)                             { e.preventDefault(); btnDone.click(); }
+  if (
+    t.tagName === "INPUT" ||
+    t.tagName === "TEXTAREA" ||
+    t.tagName === "SELECT"
+  )
+    return;
+  const btnContraction = document.getElementById("btn-contraction");
+  const btnReady = document.getElementById("btn-ready");
+  const btnDone = document.getElementById("btn-done");
+  if (btnContraction && !btnContraction.hidden) {
+    e.preventDefault();
+    btnContraction.click();
+  } else if (btnReady && !btnReady.hidden) {
+    e.preventDefault();
+    btnReady.click();
+  } else if (btnDone) {
+    e.preventDefault();
+    btnDone.click();
+  }
 });
 
-navigate('tables');
+showDisclaimer();
+navigate("tables");
