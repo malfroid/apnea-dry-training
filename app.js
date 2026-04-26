@@ -1,0 +1,701 @@
+'use strict';
+
+// ─────────────────────────────────────────────
+// Storage
+// ─────────────────────────────────────────────
+const db = {
+  getTables()      { return JSON.parse(localStorage.getItem('apnea_tables')   || '[]'); },
+  getTable(id)     { return this.getTables().find(t => t.id === id) || null; },
+  saveTable(table) {
+    const list = this.getTables();
+    const i = list.findIndex(t => t.id === table.id);
+    if (i >= 0) list[i] = table; else list.push(table);
+    localStorage.setItem('apnea_tables', JSON.stringify(list));
+  },
+  deleteTable(id)  {
+    localStorage.setItem('apnea_tables', JSON.stringify(this.getTables().filter(t => t.id !== id)));
+  },
+  getSessions()      { return JSON.parse(localStorage.getItem('apnea_sessions') || '[]'); },
+  saveSession(s)     {
+    const list = this.getSessions();
+    list.unshift(s);
+    localStorage.setItem('apnea_sessions', JSON.stringify(list));
+  },
+};
+
+// ─────────────────────────────────────────────
+// Utils
+// ─────────────────────────────────────────────
+function uid() {
+  return Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+}
+
+function fmtTime(sec) {
+  const s = Math.max(0, Math.round(sec));
+  return `${Math.floor(s / 60)}:${(s % 60).toString().padStart(2, '0')}`;
+}
+
+function parseTimeStr(str) {
+  if (!str) return 0;
+  str = String(str).trim();
+  if (str.includes(':')) {
+    const [m, s] = str.split(':').map(n => parseInt(n) || 0);
+    return m * 60 + s;
+  }
+  return parseInt(str) || 0;
+}
+
+function fmtDate(iso) {
+  const d = new Date(iso);
+  return d.toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })
+    + ' ' + d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
+}
+
+// ─────────────────────────────────────────────
+// Speech
+// ─────────────────────────────────────────────
+function speak(text) {
+  if (!window.speechSynthesis) return;
+  window.speechSynthesis.cancel();
+  const u = new SpeechSynthesisUtterance(text);
+  u.rate = 0.92;
+  window.speechSynthesis.speak(u);
+}
+
+// ─────────────────────────────────────────────
+// Session Engine
+// ─────────────────────────────────────────────
+class SessionEngine {
+  constructor(table, { onTick, onPhaseChange, onComplete }) {
+    this.table        = table;
+    this.onTick       = onTick;
+    this.onPhaseChange = onPhaseChange;
+    this.onComplete   = onComplete;
+
+    this.phases          = this._buildPhases();
+    this.phaseIdx        = -1;
+    this.timeLeft        = 0;
+    this.elapsed         = 0;
+    this.timer           = null;
+    this.paused          = false;
+    this.startTime       = Date.now();
+    this.completedRounds = 0;
+  }
+
+  get totalRounds() {
+    const p = this.table.params;
+    if (this.table.type === 'wonka')  return p.breathholds;
+    if (this.table.type === 'custom') return p.rounds.length;
+    return p.rounds;
+  }
+
+  _buildPhases() {
+    const { type, params: p } = this.table;
+    const phases = [];
+
+    if (type === 'wonka') {
+      if (p.prepTime > 0)
+        phases.push({ kind: 'prep', dur: p.prepTime, round: 0 });
+
+      for (let i = 0; i < p.breathholds; i++) {
+        phases.push({ kind: 'hold',      dur: null, round: i + 1, countUp: true });
+        phases.push({ kind: 'countdown', dur: p.countdownAfterContraction, round: i + 1 });
+        if (i < p.breathholds - 1)
+          phases.push({ kind: 'cooldown', dur: p.cooldownTime, round: i + 1 });
+      }
+    } else {
+      const rounds = this._buildRounds();
+      phases.push({ kind: 'ready', dur: 5, round: 0 });
+
+      for (let i = 0; i < rounds.length; i++) {
+        phases.push({ kind: 'hold', dur: rounds[i].hold, round: i + 1 });
+        if (i < rounds.length - 1)
+          phases.push({ kind: 'rest', dur: rounds[i].rest, round: i + 1 });
+      }
+    }
+
+    return phases;
+  }
+
+  _buildRounds() {
+    const { type, params: p } = this.table;
+    if (type === 'co2')
+      return Array.from({ length: p.rounds }, (_, i) => ({
+        hold: p.holdTime,
+        rest: Math.max(10, p.startRest - i * p.restDecrement),
+      }));
+    if (type === 'o2')
+      return Array.from({ length: p.rounds }, (_, i) => ({
+        hold: p.startHold + i * p.holdIncrement,
+        rest: p.restTime,
+      }));
+    if (type === 'custom')
+      return p.rounds;
+    return [];
+  }
+
+  start() { this._enter(0); }
+
+  _enter(idx) {
+    if (idx >= this.phases.length) { this._complete(); return; }
+
+    this.phaseIdx = idx;
+    const ph = this.phases[idx];
+
+    if (ph.countUp) {
+      this.elapsed  = 0;
+      this.timeLeft = null;
+    } else {
+      this.timeLeft = ph.dur;
+      this.elapsed  = 0;
+    }
+
+    this._announce(ph);
+    this.onPhaseChange(ph, this._state());
+    clearInterval(this.timer);
+
+    if (ph.countUp) {
+      this.timer = setInterval(() => {
+        if (this.paused) return;
+        this.elapsed++;
+        this.onTick(this._state());
+      }, 1000);
+    } else {
+      this.timer = setInterval(() => {
+        if (this.paused) return;
+        this.timeLeft--;
+        const t = this.timeLeft;
+        if (t > 0 && t <= 10) speak(String(t));
+        this.onTick(this._state());
+        if (t <= 0) {
+          clearInterval(this.timer);
+          if (ph.kind === 'hold') this.completedRounds++;
+          this._enter(idx + 1);
+        }
+      }, 1000);
+    }
+  }
+
+  signalContraction() {
+    const ph = this.phases[this.phaseIdx];
+    if (ph?.kind === 'hold' && ph.countUp) {
+      clearInterval(this.timer);
+      this.completedRounds++;
+      speak('Contraction.');
+      this._enter(this.phaseIdx + 1);
+    }
+  }
+
+  togglePause() {
+    this.paused = !this.paused;
+    return this.paused;
+  }
+
+  stop() {
+    clearInterval(this.timer);
+    this._persist(false);
+  }
+
+  _complete() {
+    clearInterval(this.timer);
+    speak('Session complete. Well done!');
+    this._persist(true);
+    this.onComplete(this._state());
+  }
+
+  _persist(completed) {
+    db.saveSession({
+      id:              uid(),
+      tableId:         this.table.id,
+      tableName:       this.table.name,
+      tableType:       this.table.type,
+      date:            new Date().toISOString(),
+      completedRounds: this.completedRounds,
+      totalRounds:     this.totalRounds,
+      totalDuration:   Math.round((Date.now() - this.startTime) / 1000),
+      completed,
+    });
+  }
+
+  _announce(ph) {
+    const n = ph.round, total = this.totalRounds;
+    const msgs = {
+      ready:    'Get ready.',
+      prep:     'Preparation. Breathe normally.',
+      hold:     ph.countUp
+                  ? `Round ${n} of ${total}. Hold. Tap when first contraction.`
+                  : `Round ${n} of ${total}. Hold.`,
+      rest:     `Rest. ${fmtTime(ph.dur)}.`,
+      countdown:'After contraction.',
+      cooldown: 'Recovery. One breath.',
+    };
+    const msg = msgs[ph.kind];
+    if (msg) speak(msg);
+  }
+
+  _state() {
+    const ph   = this.phases[this.phaseIdx] || {};
+    const next = this.phases[this.phaseIdx + 1] || null;
+    return {
+      phase:           ph,
+      next,
+      timeLeft:        this.timeLeft,
+      elapsed:         this.elapsed,
+      completedRounds: this.completedRounds,
+      totalRounds:     this.totalRounds,
+      paused:          this.paused,
+      duration:        Math.round((Date.now() - this.startTime) / 1000),
+    };
+  }
+}
+
+// ─────────────────────────────────────────────
+// App state
+// ─────────────────────────────────────────────
+let currentSession = null;
+
+// ─────────────────────────────────────────────
+// Router
+// ─────────────────────────────────────────────
+function navigate(view, params = {}) {
+  const main      = document.getElementById('main');
+  const title     = document.getElementById('header-title');
+  const btnBack   = document.getElementById('btn-back');
+  const btnHist   = document.getElementById('btn-history');
+
+  btnBack.hidden = (view === 'tables');
+  btnHist.hidden = (view !== 'tables');
+
+  btnBack.onclick = () => {
+    if (view === 'session' && currentSession) {
+      if (!confirm('Stop the current session?')) return;
+      currentSession.stop();
+      currentSession = null;
+    }
+    navigate('tables');
+  };
+
+  switch (view) {
+    case 'tables':
+      title.textContent = 'Tables';
+      renderTables(main);
+      break;
+    case 'edit':
+      title.textContent = params.id ? 'Edit Table' : 'New Table';
+      renderEdit(main, params.id || null);
+      break;
+    case 'session':
+      title.textContent = 'Session';
+      renderSession(main, params.tableId);
+      break;
+    case 'history':
+      title.textContent = 'History';
+      renderHistory(main);
+      break;
+  }
+}
+
+// ─────────────────────────────────────────────
+// View helpers
+// ─────────────────────────────────────────────
+function typeIcon(type) {
+  const labels = { co2: 'CO₂', o2: 'O₂', wonka: 'W', custom: '···' };
+  const cls    = { co2: 'icon-co2', o2: 'icon-o2', wonka: 'icon-wonka', custom: 'icon-custom' };
+  return `<div class="table-icon ${cls[type] || ''}">${labels[type] || '?'}</div>`;
+}
+
+function tableSummary(t) {
+  const p = t.params;
+  switch (t.type) {
+    case 'co2':
+      return `${p.rounds} rounds · hold ${fmtTime(p.holdTime)} · rest `
+           + `${fmtTime(p.startRest)} → ${fmtTime(Math.max(10, p.startRest - (p.rounds - 1) * p.restDecrement))}`;
+    case 'o2':
+      return `${p.rounds} rounds · hold `
+           + `${fmtTime(p.startHold)} → ${fmtTime(p.startHold + (p.rounds - 1) * p.holdIncrement)}`
+           + ` · rest ${fmtTime(p.restTime)}`;
+    case 'wonka':
+      return `${p.breathholds} breathholds · countdown ${fmtTime(p.countdownAfterContraction)}`;
+    case 'custom':
+      return `${p.rounds.length} rounds`;
+    default:
+      return '';
+  }
+}
+
+function phaseLabel(kind) {
+  return { ready: 'Get Ready', prep: 'Preparation', hold: 'Hold',
+           rest: 'Rest', countdown: 'After Contraction', cooldown: 'Recovery' }[kind] || kind;
+}
+
+function phaseClass(kind) {
+  if (kind === 'hold' || kind === 'countdown') return 'phase-hold';
+  if (kind === 'rest' || kind === 'cooldown')  return 'phase-rest';
+  return 'phase-prep';
+}
+
+function nextLabel(next) {
+  if (!next) return '';
+  if (next.countUp) return `Next: ${phaseLabel(next.kind)}`;
+  return `Next: ${phaseLabel(next.kind)}${next.dur ? ' ' + fmtTime(next.dur) : ''}`;
+}
+
+// ─────────────────────────────────────────────
+// View: Tables
+// ─────────────────────────────────────────────
+function renderTables(main) {
+  const tables = db.getTables();
+  let html = '';
+
+  if (tables.length === 0) {
+    html = `<div class="empty-state">
+      <h3>No tables yet</h3>
+      <p>Tap + to create your first training table.</p>
+    </div>`;
+  } else {
+    html = `<div class="card">` +
+      tables.map(t => `
+        <div class="card-row" data-id="${t.id}">
+          ${typeIcon(t.type)}
+          <div class="table-info">
+            <div class="table-name">${t.name}</div>
+            <div class="table-meta">${tableSummary(t)}</div>
+          </div>
+          <span class="chevron">›</span>
+        </div>`).join('') +
+      `</div>`;
+  }
+
+  main.innerHTML = html
+    + `<div class="list-bottom-pad"></div>`
+    + `<button class="fab" id="btn-new" title="New table">+</button>`;
+
+  main.querySelectorAll('.card-row').forEach(row => {
+    // tap → start session
+    row.addEventListener('click', () => navigate('session', { tableId: row.dataset.id }));
+
+    // long-press → edit
+    let pressTimer;
+    row.addEventListener('pointerdown',  () => { pressTimer = setTimeout(() => navigate('edit', { id: row.dataset.id }), 600); });
+    row.addEventListener('pointerup',    () => clearTimeout(pressTimer));
+    row.addEventListener('pointerleave', () => clearTimeout(pressTimer));
+    row.addEventListener('contextmenu',  e  => { e.preventDefault(); navigate('edit', { id: row.dataset.id }); });
+  });
+
+  document.getElementById('btn-new').addEventListener('click', () => navigate('edit', {}));
+}
+
+// ─────────────────────────────────────────────
+// View: Edit
+// ─────────────────────────────────────────────
+function timePairHtml(name, totalSec = 0) {
+  const m = Math.floor(totalSec / 60);
+  const s = totalSec % 60;
+  return `<div class="time-pair">
+    <input type="number" id="${name}_m" min="0" max="99"  value="${m}" placeholder="0">
+    <span>:</span>
+    <input type="number" id="${name}_s" min="0" max="59"  value="${s.toString().padStart(2, '0')}" placeholder="00">
+  </div>`;
+}
+
+function getTimePair(name) {
+  const m = parseInt(document.getElementById(name + '_m')?.value) || 0;
+  const s = parseInt(document.getElementById(name + '_s')?.value) || 0;
+  return m * 60 + s;
+}
+
+function renderEdit(main, id) {
+  const table = id ? db.getTable(id) : null;
+  const type  = table?.type || 'co2';
+
+  main.innerHTML = `
+    <div class="form-group">
+      <label class="form-label">Name</label>
+      <input class="form-input" id="f-name" value="${table?.name || ''}" placeholder="Table name">
+    </div>
+    <div class="form-group">
+      <label class="form-label">Type</label>
+      <select class="form-input" id="f-type">
+        <option value="co2"    ${type==='co2'    ?'selected':''}>CO₂ Tolerance</option>
+        <option value="o2"     ${type==='o2'     ?'selected':''}>O₂ Efficiency</option>
+        <option value="wonka"  ${type==='wonka'  ?'selected':''}>Wonka</option>
+        <option value="custom" ${type==='custom' ?'selected':''}>Custom</option>
+      </select>
+    </div>
+    <div id="type-fields"></div>
+    ${id ? `<div class="delete-zone"><button class="btn btn-danger" id="btn-delete">Delete Table</button></div>` : ''}
+    <div style="height:80px"></div>
+    <button class="fab" id="btn-save" title="Save">✓</button>`;
+
+  function renderTypeFields(t) {
+    const p  = table?.params || {};
+    const el = document.getElementById('type-fields');
+
+    if (t === 'co2') {
+      el.innerHTML = `
+        <div class="form-group">
+          <label class="form-label">Rounds</label>
+          <input class="form-input" id="f-rounds" type="number" min="1" max="30" value="${p.rounds || 8}">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Hold Time (fixed)</label>
+          ${timePairHtml('f-holdTime', p.holdTime ?? 90)}
+        </div>
+        <div class="form-group">
+          <label class="form-label">Starting Rest Time</label>
+          ${timePairHtml('f-startRest', p.startRest ?? 120)}
+        </div>
+        <div class="form-group">
+          <label class="form-label">Rest Decrement per Round (sec)</label>
+          <input class="form-input" id="f-restDecrement" type="number" min="0" max="120" value="${p.restDecrement ?? 15}">
+        </div>`;
+
+    } else if (t === 'o2') {
+      el.innerHTML = `
+        <div class="form-group">
+          <label class="form-label">Rounds</label>
+          <input class="form-input" id="f-rounds" type="number" min="1" max="30" value="${p.rounds || 8}">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Starting Hold Time</label>
+          ${timePairHtml('f-startHold', p.startHold ?? 60)}
+        </div>
+        <div class="form-group">
+          <label class="form-label">Hold Increment per Round (sec)</label>
+          <input class="form-input" id="f-holdIncrement" type="number" min="0" max="120" value="${p.holdIncrement ?? 15}">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Rest Time (fixed)</label>
+          ${timePairHtml('f-restTime', p.restTime ?? 120)}
+        </div>`;
+
+    } else if (t === 'wonka') {
+      el.innerHTML = `
+        <div class="form-group">
+          <label class="form-label">Number of Breathholds</label>
+          <input class="form-input" id="f-breathholds" type="number" min="1" max="30" value="${p.breathholds || 5}">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Preparation Time</label>
+          ${timePairHtml('f-prepTime', p.prepTime ?? 120)}
+        </div>
+        <div class="form-group">
+          <label class="form-label">Countdown After 1st Contraction</label>
+          ${timePairHtml('f-countdownAfterContraction', p.countdownAfterContraction ?? 30)}
+        </div>
+        <div class="form-group">
+          <label class="form-label">Cooldown Time (between rounds)</label>
+          ${timePairHtml('f-cooldownTime', p.cooldownTime ?? 120)}
+        </div>`;
+
+    } else if (t === 'custom') {
+      const rounds = (p.rounds && p.rounds.length > 0) ? p.rounds : [{ hold: 90, rest: 120 }];
+      renderCustomRounds(el, rounds);
+    }
+  }
+
+  function renderCustomRounds(container, rounds) {
+    const rows = rounds.map((r, i) => `
+      <div class="round-row">
+        <span class="round-num">${i + 1}</span>
+        <span class="round-label">Hold</span>
+        <input class="round-time" type="text" value="${fmtTime(r.hold)}" placeholder="1:30">
+        <span class="round-label" style="margin-left:6px">Rest</span>
+        <input class="round-time" type="text" value="${fmtTime(r.rest)}" placeholder="2:00">
+        <span class="round-sep"></span>
+        <button type="button" class="btn-remove" data-idx="${i}" title="Remove">✕</button>
+      </div>`).join('');
+
+    container.innerHTML = `
+      <div class="form-group">
+        <label class="form-label">Rounds</label>
+        <div class="rounds-editor" id="rounds-editor">${rows}</div>
+        <button type="button" class="btn-add-round" id="btn-add-round">+ Add Round</button>
+      </div>`;
+
+    document.getElementById('btn-add-round').addEventListener('click', () => {
+      const current = readCustomRounds();
+      const last    = current[current.length - 1] || { hold: 90, rest: 120 };
+      renderCustomRounds(container, [...current, { hold: last.hold, rest: last.rest }]);
+    });
+
+    container.querySelectorAll('.btn-remove').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const current = readCustomRounds();
+        if (current.length <= 1) return;
+        current.splice(parseInt(btn.dataset.idx), 1);
+        renderCustomRounds(container, current);
+      });
+    });
+  }
+
+  function readCustomRounds() {
+    return Array.from(document.querySelectorAll('#rounds-editor .round-row')).map(row => {
+      const inputs = row.querySelectorAll('.round-time');
+      return { hold: parseTimeStr(inputs[0]?.value), rest: parseTimeStr(inputs[1]?.value) };
+    });
+  }
+
+  renderTypeFields(type);
+  document.getElementById('f-type').addEventListener('change', e => renderTypeFields(e.target.value));
+
+  document.getElementById('btn-save').addEventListener('click', () => {
+    const name = document.getElementById('f-name').value.trim();
+    if (!name) { alert('Please enter a name.'); return; }
+    const t = document.getElementById('f-type').value;
+
+    let params;
+    if (t === 'co2') {
+      params = {
+        rounds:        parseInt(document.getElementById('f-rounds').value) || 8,
+        holdTime:      getTimePair('f-holdTime'),
+        startRest:     getTimePair('f-startRest'),
+        restDecrement: parseInt(document.getElementById('f-restDecrement').value) || 0,
+      };
+    } else if (t === 'o2') {
+      params = {
+        rounds:        parseInt(document.getElementById('f-rounds').value) || 8,
+        startHold:     getTimePair('f-startHold'),
+        holdIncrement: parseInt(document.getElementById('f-holdIncrement').value) || 0,
+        restTime:      getTimePair('f-restTime'),
+      };
+    } else if (t === 'wonka') {
+      params = {
+        breathholds:                parseInt(document.getElementById('f-breathholds').value) || 5,
+        prepTime:                   getTimePair('f-prepTime'),
+        countdownAfterContraction:  getTimePair('f-countdownAfterContraction'),
+        cooldownTime:               getTimePair('f-cooldownTime'),
+      };
+    } else {
+      params = { rounds: readCustomRounds() };
+    }
+
+    db.saveTable({ id: table?.id || uid(), name, type: t, params });
+    navigate('tables');
+  });
+
+  if (id) {
+    document.getElementById('btn-delete')?.addEventListener('click', () => {
+      if (confirm(`Delete "${table.name}"?`)) {
+        db.deleteTable(id);
+        navigate('tables');
+      }
+    });
+  }
+}
+
+// ─────────────────────────────────────────────
+// View: Session
+// ─────────────────────────────────────────────
+function renderSession(main, tableId) {
+  const table = db.getTable(tableId);
+  if (!table) { navigate('tables'); return; }
+
+  main.innerHTML = `
+    <div class="session-wrap">
+      <div class="session-round"  id="s-round"></div>
+      <div class="session-phase"  id="s-phase"></div>
+      <div class="session-timer"  id="s-timer">–:––</div>
+      <div class="session-next"   id="s-next"></div>
+      <button class="btn-contraction" id="btn-contraction" hidden>First Contraction</button>
+      <div class="session-controls">
+        <button class="btn btn-secondary" id="btn-pause">Pause</button>
+        <button class="btn btn-danger"    id="btn-stop">Stop</button>
+      </div>
+    </div>`;
+
+  function updateUI({ phase, next, timeLeft, elapsed, completedRounds, totalRounds, paused }) {
+    document.getElementById('s-round').textContent =
+      phase.round ? `Round ${phase.round} of ${totalRounds}` : '';
+
+    const phaseEl = document.getElementById('s-phase');
+    phaseEl.textContent  = phaseLabel(phase.kind);
+    phaseEl.className    = `session-phase ${phaseClass(phase.kind)}`;
+
+    document.getElementById('s-timer').textContent =
+      phase.countUp ? fmtTime(elapsed) : fmtTime(timeLeft ?? 0);
+
+    document.getElementById('s-next').textContent = nextLabel(next);
+
+    document.getElementById('btn-contraction').hidden =
+      !(phase.kind === 'hold' && phase.countUp);
+
+    document.getElementById('btn-pause').textContent = paused ? 'Resume' : 'Pause';
+  }
+
+  currentSession = new SessionEngine(table, {
+    onTick:        updateUI,
+    onPhaseChange: updateUI,
+    onComplete:    ({ completedRounds, totalRounds, duration }) => {
+      main.innerHTML = `
+        <div class="session-complete">
+          <div class="checkmark">✓</div>
+          <h2>Session Complete</h2>
+          <p>${completedRounds} of ${totalRounds} rounds completed.<br>Total time: ${fmtTime(duration)}.</p>
+          <button class="btn btn-primary" id="btn-done">Done</button>
+        </div>`;
+      document.getElementById('btn-done').addEventListener('click', () => navigate('tables'));
+      currentSession = null;
+    },
+  });
+
+  document.getElementById('btn-contraction').addEventListener('click', () => currentSession?.signalContraction());
+
+  document.getElementById('btn-pause').addEventListener('click', () => {
+    const paused = currentSession?.togglePause();
+    document.getElementById('btn-pause').textContent = paused ? 'Resume' : 'Pause';
+  });
+
+  document.getElementById('btn-stop').addEventListener('click', () => {
+    if (confirm('Stop the session?')) {
+      currentSession?.stop();
+      currentSession = null;
+      navigate('tables');
+    }
+  });
+
+  currentSession.start();
+}
+
+// ─────────────────────────────────────────────
+// View: History
+// ─────────────────────────────────────────────
+function renderHistory(main) {
+  const sessions = db.getSessions();
+
+  if (sessions.length === 0) {
+    main.innerHTML = `<div class="empty-state">
+      <h3>No sessions yet</h3>
+      <p>Complete a training session to see your history here.</p>
+    </div>`;
+    return;
+  }
+
+  const rows = sessions.map(s => {
+    const badge = s.completed
+      ? `<span class="badge-ok">✓ Complete</span>`
+      : `<span class="badge-partial">${s.completedRounds}/${s.totalRounds} rounds</span>`;
+    return `
+      <div class="history-item">
+        <div class="history-top">
+          <span class="history-name">${s.tableName}</span>
+          <span class="history-date">${fmtDate(s.date)}</span>
+        </div>
+        <div class="history-meta">
+          ${badge}
+          <span class="dot">·</span>
+          ${fmtTime(s.totalDuration)}
+          <span class="dot">·</span>
+          ${s.tableType.toUpperCase()}
+        </div>
+      </div>`;
+  }).join('');
+
+  main.innerHTML = `<div class="card">${rows}</div>`;
+}
+
+// ─────────────────────────────────────────────
+// Init
+// ─────────────────────────────────────────────
+document.getElementById('btn-history').addEventListener('click', () => navigate('history'));
+navigate('tables');
