@@ -85,11 +85,34 @@ const settings = {
   set voiceEnabled(v) {
     localStorage.setItem("apnea_voice", v ? "on" : "off");
   },
+  get audioMode() {
+    return localStorage.getItem("apnea_audio_mode") || "voice";
+  },
+  set audioMode(v) {
+    localStorage.setItem("apnea_audio_mode", v);
+  },
 };
 
 // ─────────────────────────────────────────────
 // Audio clips
 // ─────────────────────────────────────────────
+const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+
+function playBeep(freq = 440, duration = 0.1, type = "sine") {
+  if (!settings.voiceEnabled) return;
+  if (audioCtx.state === "suspended") audioCtx.resume();
+  const osc = audioCtx.createOscillator();
+  const gain = audioCtx.createGain();
+  osc.type = type;
+  osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
+  gain.gain.setValueAtTime(0.2, audioCtx.currentTime);
+  gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + duration);
+  osc.connect(gain);
+  gain.connect(audioCtx.destination);
+  osc.start();
+  osc.stop(audioCtx.currentTime + duration);
+}
+
 const audioExt =
   new Audio().canPlayType("audio/webm; codecs=opus") !== "" ? "opus" : "mp3";
 
@@ -118,6 +141,27 @@ let _currentClip = null;
 
 function speak(key, thenKey = null) {
   if (!settings.voiceEnabled) return;
+
+  if (settings.audioMode === "beep") {
+    // Simple beep logic:
+    // Countdown numbers (n10, n3, n2, n1) -> Standard beep
+    // Start of hold (hold_n) -> Higher beep
+    // Complete -> Sequence of beeps
+    if (key.startsWith("n")) {
+      playBeep(440, 0.1);
+    } else if (key.startsWith("hold")) {
+      playBeep(880, 0.2);
+    } else if (key === "complete") {
+      playBeep(880, 0.1);
+      setTimeout(() => playBeep(1100, 0.1), 150);
+      setTimeout(() => playBeep(1320, 0.3), 300);
+    } else {
+      playBeep(660, 0.1);
+    }
+    if (thenKey) setTimeout(() => speak(thenKey), 400);
+    return;
+  }
+
   if (_currentClip) {
     _currentClip.onended = null;
     _currentClip.pause();
@@ -957,6 +1001,16 @@ function renderSettings(main) {
           <span class="slider round"></span>
         </label>
       </div>
+      <div class="settings-row" id="audio-mode-row" style="${settings.voiceEnabled ? "" : "display:none"}">
+        <div class="settings-label">
+          <div class="settings-title">Cue Type</div>
+          <div class="settings-desc">Choose between voice and simple beeps</div>
+        </div>
+        <select class="form-input" id="select-audio-mode" style="width: auto; padding: 6px 12px; font-size: 0.85rem;">
+          <option value="voice" ${settings.audioMode === "voice" ? "selected" : ""}>Voice</option>
+          <option value="beep" ${settings.audioMode === "beep" ? "selected" : ""}>Beep</option>
+        </select>
+      </div>
     </div>
 
     <div class="delete-zone" style="margin-top: 40px">
@@ -967,8 +1021,17 @@ function renderSettings(main) {
 
   document.getElementById("toggle-voice").addEventListener("change", (e) => {
     settings.voiceEnabled = e.target.checked;
+    document.getElementById("audio-mode-row").style.display = e.target.checked
+      ? ""
+      : "none";
     updateSoundBtn();
   });
+
+  document
+    .getElementById("select-audio-mode")
+    .addEventListener("change", (e) => {
+      settings.audioMode = e.target.value;
+    });
 
   document.getElementById("btn-delete-all").addEventListener("click", () => {
     if (
