@@ -994,7 +994,7 @@ function renderSettings(main) {
       <div class="settings-row">
         <div class="settings-label">
           <div class="settings-title">Audio Cues</div>
-          <div class="settings-desc">Voice guidance during sessions</div>
+          <div class="settings-desc">Audio guidance during sessions</div>
         </div>
         <label class="switch">
           <input type="checkbox" id="toggle-voice" ${settings.voiceEnabled ? "checked" : ""}>
