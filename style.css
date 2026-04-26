@@ -474,7 +474,9 @@ select.form-input {
     display: flex;
     align-items: center;
     justify-content: center;
+    margin-top: 0; /* Override legacy vertical stack margin */
 }
+
 .btn-secondary {
     background: var(--surface2);
     color: var(--text);
