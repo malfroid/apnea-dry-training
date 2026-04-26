@@ -498,7 +498,7 @@ input:checked + .slider:before {
     display: flex;
     flex-direction: column;
     align-items: center;
-    padding: 32px 24px 40px;
+    padding: 32px 24px calc(40px + env(safe-area-inset-bottom, 0px));
     min-height: calc(100dvh - 54px);
 }
 
@@ -577,6 +577,7 @@ input:checked + .slider:before {
     gap: 12px;
     width: 100%;
     max-width: 300px;
+    margin-top: auto;
 }
 .session-controls .btn {
     flex: 1;
