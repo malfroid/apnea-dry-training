@@ -177,10 +177,14 @@ function speak(key, thenKey = null) {
 
   if (settings.audioMode === "beep") {
     // Simple beep logic:
-    // Countdown numbers (n10, n3, n2, n1) -> Standard beep
+    // n10 -> Double beep (10s warning)
+    // n3, n2, n1 -> Standard beep (final countdown)
     // Start of hold (hold_n) -> Higher beep
     // Complete -> Sequence of beeps
-    if (key.startsWith("n")) {
+    if (key === "n10") {
+      playBeep(440, 0.1);
+      setTimeout(() => playBeep(440, 0.1), 180);
+    } else if (key.startsWith("n")) {
       playBeep(440, 0.1);
     } else if (key.startsWith("hold")) {
       playBeep(880, 0.2);
