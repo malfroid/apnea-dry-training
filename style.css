@@ -572,6 +572,27 @@ input:checked + .slider:before {
     box-shadow: 0 4px 20px rgba(85, 153, 224, 0.4);
 }
 
+.btn-skip:not([hidden]) {
+    display: inline-block;
+    background: transparent;
+    color: var(--text2);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 10px 20px;
+    font-size: 0.85rem;
+    font-weight: 500;
+    cursor: pointer;
+    margin-bottom: 12px;
+    letter-spacing: 0.02em;
+}
+.btn-skip:hover {
+    color: var(--text);
+    border-color: var(--text2);
+}
+.btn-skip:active {
+    opacity: 0.7;
+}
+
 .session-controls {
     display: flex;
     gap: 12px;

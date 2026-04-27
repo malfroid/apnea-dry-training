@@ -416,6 +416,13 @@ class SessionEngine {
     if (ph?.userTriggered) this._enter(this.phaseIdx + 1);
   }
 
+  signalSkipRelax() {
+    const ph = this.phases[this.phaseIdx];
+    if (ph?.kind !== "relax") return;
+    clearInterval(this.timer);
+    this._enter(this.phaseIdx + 1);
+  }
+
   signalContraction() {
     const ph = this.phases[this.phaseIdx];
     if (ph?.kind === "hold" && ph.countUp) {
@@ -939,6 +946,7 @@ function renderSession(main, tableId) {
         <div class="session-next"   id="s-next"></div>
         <button class="btn-contraction" id="btn-contraction" hidden>First Contraction</button>
         <button class="btn-contraction btn-ready" id="btn-ready" hidden>Ready</button>
+        <button class="btn-skip" id="btn-skip-relax" hidden>Skip to first hold</button>
         <div class="session-controls">
           <button class="btn btn-secondary" id="btn-pause">Pause</button>
           <button class="btn btn-danger"    id="btn-stop">Stop</button>
@@ -969,6 +977,9 @@ function renderSession(main, tableId) {
     document
       .getElementById("btn-ready")
       .addEventListener("click", () => currentSession?.signalReady());
+    document
+      .getElementById("btn-skip-relax")
+      .addEventListener("click", () => currentSession?.signalSkipRelax());
 
     document.getElementById("btn-pause").addEventListener("click", () => {
       const paused = currentSession?.togglePause();
@@ -1036,6 +1047,11 @@ function renderSession(main, tableId) {
     const btnReady = document.getElementById("btn-ready");
     if (btnReady) {
       btnReady.hidden = !phase.userTriggered;
+    }
+
+    const btnSkipRelax = document.getElementById("btn-skip-relax");
+    if (btnSkipRelax) {
+      btnSkipRelax.hidden = phase.kind !== "relax";
     }
 
     const btnPause = document.getElementById("btn-pause");
