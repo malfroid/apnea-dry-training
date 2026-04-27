@@ -105,6 +105,21 @@ const settings = {
   set countdownFrom5(v) {
     localStorage.setItem("apnea_countdown_from_5", v ? "true" : "false");
   },
+  get relaxationDuration() {
+    const raw = localStorage.getItem("apnea_relax_duration");
+    if (raw === null) return 60;
+    const n = parseInt(raw, 10);
+    return Number.isFinite(n) && n >= 0 ? n : 60;
+  },
+  set relaxationDuration(v) {
+    localStorage.setItem("apnea_relax_duration", String(v | 0));
+  },
+  get relaxationSound() {
+    return localStorage.getItem("apnea_relax_sound") || "none";
+  },
+  set relaxationSound(v) {
+    localStorage.setItem("apnea_relax_sound", v);
+  },
 };
 
 // ─────────────────────────────────────────────
@@ -140,6 +155,7 @@ const audioExt =
 const CLIP_KEYS = [
   "rest",
   "hold",
+  "relax",
   "after_contraction",
   "one_breath",
   "complete",
@@ -190,6 +206,21 @@ function tryUnlockAudio() {
 document.addEventListener("pointerdown", tryUnlockAudio, { once: true });
 document.addEventListener("touchstart", tryUnlockAudio, { once: true });
 document.addEventListener("keydown", tryUnlockAudio, { once: true });
+
+let _relaxSound = null;
+function startRelaxSound() {
+  const name = settings.relaxationSound;
+  if (name === "none") return;
+  _relaxSound = new Audio(`audio/sounds/${name}.mp3`);
+  _relaxSound.loop = true;
+  _relaxSound.volume = 0.4;
+  _relaxSound.play().catch(() => {});
+}
+function stopRelaxSound() {
+  if (!_relaxSound) return;
+  _relaxSound.pause();
+  _relaxSound = null;
+}
 
 function getCountdownCue(t) {
   if (t === 10) return "n10";
@@ -274,6 +305,10 @@ class SessionEngine {
     const { type, params: p } = this.table;
     const phases = [];
 
+    if (settings.relaxationDuration > 0) {
+      phases.push({ kind: "relax", dur: settings.relaxationDuration, round: 0 });
+    }
+
     if (type === "wonka") {
       for (let i = 0; i < p.breathholds; i++) {
         phases.push({ kind: "hold", dur: null, round: i + 1, countUp: true });
@@ -324,6 +359,8 @@ class SessionEngine {
   }
 
   _enter(idx) {
+    stopRelaxSound();
+
     if (idx >= this.phases.length) {
       this._complete();
       return;
@@ -344,6 +381,8 @@ class SessionEngine {
     this.onPhaseChange(this._state());
     clearInterval(this.timer);
 
+    if (ph.kind === "relax") startRelaxSound();
+
     if (ph.userTriggered) {
       // no timer — wait for signalReady()
       return;
@@ -360,8 +399,10 @@ class SessionEngine {
         if (this.paused) return;
         this.timeLeft--;
         const t = this.timeLeft;
-        const cue = getCountdownCue(t);
-        if (cue) speak(cue);
+        if (ph.kind !== "relax") {
+          const cue = getCountdownCue(t);
+          if (cue) speak(cue);
+        }
         this.onTick(this._state());
         if (t <= 0) {
           clearInterval(this.timer);
@@ -393,11 +434,13 @@ class SessionEngine {
 
   stop() {
     clearInterval(this.timer);
+    stopRelaxSound();
     this._persist(false);
   }
 
   _complete() {
     clearInterval(this.timer);
+    stopRelaxSound();
     speak("complete");
     this._persist(true);
     this.onComplete(this._state());
@@ -422,10 +465,13 @@ class SessionEngine {
       rest: "rest",
       countdown: "after_contraction",
       breath: "one_breath",
+      relax: "relax",
     }[ph.kind];
     // Chain the initial countdown after the announce when the phase starts
-    // at a threshold, so they don't overlap.
-    const initialCount = !ph.countUp ? getCountdownCue(ph.dur) : null;
+    // at a threshold, so they don't overlap. Skip during relax — the count
+    // would disrupt the calm.
+    const initialCount =
+      !ph.countUp && ph.kind !== "relax" ? getCountdownCue(ph.dur) : null;
     if (announceKey) {
       speak(announceKey, initialCount);
       return;
@@ -554,6 +600,7 @@ function phaseLabel(kind) {
     {
       ready: "Get Ready",
       prep: "Preparation",
+      relax: "Relax",
       hold: "Hold",
       rest: "Rest",
       countdown: "Hold",
@@ -1098,6 +1145,33 @@ function renderSettings(main) {
           <option value="5" ${settings.countdownFrom5 ? "selected" : ""}>5 seconds</option>
         </select>
       </div>
+      <div class="settings-row">
+        <div class="settings-label">
+          <div class="settings-title">Initial Relaxation</div>
+          <div class="settings-desc">Settle in before the first hold</div>
+        </div>
+        <select class="form-input" id="select-relax-duration" style="width: auto; padding: 6px 12px; font-size: 0.85rem;">
+          <option value="0" ${settings.relaxationDuration === 0 ? "selected" : ""}>Off</option>
+          <option value="30" ${settings.relaxationDuration === 30 ? "selected" : ""}>30 seconds</option>
+          <option value="60" ${settings.relaxationDuration === 60 ? "selected" : ""}>1 minute</option>
+          <option value="120" ${settings.relaxationDuration === 120 ? "selected" : ""}>2 minutes</option>
+          <option value="180" ${settings.relaxationDuration === 180 ? "selected" : ""}>3 minutes</option>
+          <option value="300" ${settings.relaxationDuration === 300 ? "selected" : ""}>5 minutes</option>
+        </select>
+      </div>
+      <div class="settings-row" id="relax-sound-row" style="${settings.relaxationDuration > 0 ? "" : "display:none"}">
+        <div class="settings-label">
+          <div class="settings-title">Relaxation Sound</div>
+          <div class="settings-desc">Optional ambient loop during relaxation</div>
+        </div>
+        <select class="form-input" id="select-relax-sound" style="width: auto; padding: 6px 12px; font-size: 0.85rem;">
+          <option value="none" ${settings.relaxationSound === "none" ? "selected" : ""}>None</option>
+          <option value="rain" ${settings.relaxationSound === "rain" ? "selected" : ""}>Rain</option>
+          <option value="waves" ${settings.relaxationSound === "waves" ? "selected" : ""}>Waves</option>
+          <option value="forest" ${settings.relaxationSound === "forest" ? "selected" : ""}>Forest</option>
+          <option value="campfire" ${settings.relaxationSound === "campfire" ? "selected" : ""}>Campfire</option>
+        </select>
+      </div>
     </div>
 
     <div class="delete-zone" style="margin-top: 40px">
@@ -1148,6 +1222,40 @@ function renderSettings(main) {
     .getElementById("select-countdown-from")
     .addEventListener("change", (e) => {
       settings.countdownFrom5 = e.target.value === "5";
+    });
+
+  document
+    .getElementById("select-relax-duration")
+    .addEventListener("change", (e) => {
+      settings.relaxationDuration = parseInt(e.target.value, 10) || 0;
+      document.getElementById("relax-sound-row").style.display =
+        settings.relaxationDuration > 0 ? "" : "none";
+    });
+
+  let _soundPreview = null;
+  let _soundPreviewTimer = null;
+  document
+    .getElementById("select-relax-sound")
+    .addEventListener("change", (e) => {
+      settings.relaxationSound = e.target.value;
+      if (_soundPreview) {
+        _soundPreview.pause();
+        _soundPreview = null;
+      }
+      if (_soundPreviewTimer) {
+        clearTimeout(_soundPreviewTimer);
+        _soundPreviewTimer = null;
+      }
+      if (settings.relaxationSound === "none") return;
+      _soundPreview = new Audio(`audio/sounds/${settings.relaxationSound}.mp3`);
+      _soundPreview.volume = 0.4;
+      _soundPreview.play().catch(() => {});
+      _soundPreviewTimer = setTimeout(() => {
+        if (_soundPreview) {
+          _soundPreview.pause();
+          _soundPreview = null;
+        }
+      }, 3000);
     });
 
   document.getElementById("btn-delete-all").addEventListener("click", () => {

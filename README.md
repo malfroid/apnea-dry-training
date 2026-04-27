@@ -32,3 +32,7 @@ No build step. No dependencies.
 - Tap a table to start a session. Long-press to edit.
 - During a Wonka session, tap **First Contraction** when you feel the first diaphragm spasm.
 - Voice announcements use the Audio API — allow audio in your browser.
+
+## Credits
+
+Ambient relaxation sounds are sourced from the [Moodist](https://github.com/remvze/moodist) project (MIT-licensed); the original audio is from Pixabay / CC0. See [`audio/sounds/CREDITS.md`](audio/sounds/CREDITS.md) for the full license text and per-file attribution.

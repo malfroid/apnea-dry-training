@@ -28,6 +28,7 @@ CLIPS = {
     "complete": "Session complete. Well done!",
     "tap_contraction": "Tap when you feel the first contraction.",
     "n10": "10.",
+    "relax": "Take this time to relax. Breathe slowly and deeply.",
 }
 
 # Built by concatenating individually-spoken numbers, each padded to exactly
