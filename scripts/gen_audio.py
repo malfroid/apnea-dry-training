@@ -51,6 +51,14 @@ def generate_wav(key: str, text: str) -> Path:
     return wav
 
 
+SILENCE_TRIM = (
+    "silenceremove=start_periods=1:start_silence=0.02:start_threshold=-40dB,"
+    "areverse,"
+    "silenceremove=start_periods=1:start_silence=0.05:start_threshold=-40dB,"
+    "areverse"
+)
+
+
 def compress(key: str, wav: Path) -> None:
     opus = AUDIO_DIR / f"{key}.opus"
     mp3 = AUDIO_DIR / f"{key}.mp3"
@@ -62,6 +70,8 @@ def compress(key: str, wav: Path) -> None:
                 "-y",
                 "-i",
                 str(wav),
+                "-af",
+                SILENCE_TRIM,
                 "-c:a",
                 "libopus",
                 "-b:a",
@@ -83,6 +93,8 @@ def compress(key: str, wav: Path) -> None:
                 "-y",
                 "-i",
                 str(wav),
+                "-af",
+                SILENCE_TRIM,
                 "-c:a",
                 "libmp3lame",
                 "-b:a",
