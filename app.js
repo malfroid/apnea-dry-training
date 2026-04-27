@@ -1141,8 +1141,7 @@ function renderSettings(main) {
     .addEventListener("change", (e) => {
       settings.voiceGender = e.target.value;
       loadClips();
-      _audioUnlocked = false;
-      unlockAudio();
+      speak("count_321");
     });
 
   document
