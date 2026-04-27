@@ -1154,12 +1154,16 @@ document.addEventListener("keydown", (e) => {
   const btnContraction = document.getElementById("btn-contraction");
   const btnReady = document.getElementById("btn-ready");
   const btnDone = document.getElementById("btn-done");
+  const btnStart = document.getElementById("btn-start-session");
   if (btnContraction && !btnContraction.hidden) {
     e.preventDefault();
     btnContraction.click();
   } else if (btnReady && !btnReady.hidden) {
     e.preventDefault();
     btnReady.click();
+  } else if (btnStart) {
+    e.preventDefault();
+    btnStart.click();
   } else if (btnDone) {
     e.preventDefault();
     btnDone.click();
