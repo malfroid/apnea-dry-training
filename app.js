@@ -115,7 +115,7 @@ const settings = {
     localStorage.setItem("apnea_relax_duration", String(v | 0));
   },
   get relaxationSound() {
-    return localStorage.getItem("apnea_relax_sound") || "none";
+    return localStorage.getItem("apnea_relax_sound") || "waves";
   },
   set relaxationSound(v) {
     localStorage.setItem("apnea_relax_sound", v);
@@ -224,12 +224,11 @@ function stopRelaxSound() {
 }
 
 function getCountdownCue(t, next = null) {
-  if (t === 10) return "n10";
   const isVoice = settings.audioMode !== "beep";
+  // Lead-in 2 seconds before the "10" marker when the next phase is a hold.
+  if (isVoice && next?.kind === "hold" && t === 12) return "hold_breath_in";
+  if (t === 10) return "n10";
   if (isVoice) {
-    // Lead-in 2 seconds before the countdown when the next phase is a hold.
-    const leadInT = settings.countdownFrom5 ? 7 : 5;
-    if (next?.kind === "hold" && t === leadInT) return "hold_breath_in";
     if (settings.countdownFrom5 && t === 5) return "count_54321";
     if (!settings.countdownFrom5 && t === 3) return "count_321";
     return null;
