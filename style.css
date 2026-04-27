@@ -412,6 +412,22 @@ select.form-input {
     text-align: center;
     line-height: 1.4;
 }
+.settings-footer {
+    text-align: center;
+    margin-top: 32px;
+    font-size: 0.78rem;
+    color: var(--text2);
+}
+.settings-footer a {
+    color: var(--text2);
+    text-decoration: none;
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 1px;
+}
+.settings-footer a:hover {
+    color: var(--text);
+    border-bottom-color: var(--text2);
+}
 
 /* ── Toggle Switch ── */
 .switch {

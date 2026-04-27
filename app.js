@@ -1200,6 +1200,10 @@ function renderSettings(main) {
       <button class="btn btn-secondary" id="btn-reload-assets">Reload App</button>
       <p class="settings-help">Force-download fresh JS, CSS, and audio. Use after updating the app on Safari.</p>
     </div>
+
+    <p class="settings-footer">
+      <a href="https://github.com/malfroid/apnea-dry-training" target="_blank" rel="noopener noreferrer">View source on GitHub</a>
+    </p>
   `;
 
   const updateAudioRowsVisibility = () => {
