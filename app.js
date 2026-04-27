@@ -92,6 +92,19 @@ const settings = {
   set audioMode(v) {
     localStorage.setItem("apnea_audio_mode", v);
   },
+  get voiceGender() {
+    const v = localStorage.getItem("apnea_voice_gender");
+    return v === "male" ? "male" : "female";
+  },
+  set voiceGender(v) {
+    localStorage.setItem("apnea_voice_gender", v === "male" ? "male" : "female");
+  },
+  get countdownFrom5() {
+    return localStorage.getItem("apnea_countdown_from_5") === "true";
+  },
+  set countdownFrom5(v) {
+    localStorage.setItem("apnea_countdown_from_5", v ? "true" : "false");
+  },
 };
 
 // ─────────────────────────────────────────────
@@ -125,31 +138,32 @@ const audioExt =
   new Audio().canPlayType("audio/webm; codecs=opus") !== "" ? "opus" : "mp3";
 
 const CLIP_KEYS = [
-  "ready",
   "rest",
+  "hold",
   "after_contraction",
   "one_breath",
   "complete",
   "tap_contraction",
-  "n1",
-  "n2",
-  "n3",
   "n10",
-  ...Array.from({ length: 20 }, (_, i) => `hold_${i + 1}`),
+  "count_321",
+  "count_54321",
 ];
 
 const clips = {};
-CLIP_KEYS.forEach((key) => {
-  const a = new Audio(`audio/${key}.${audioExt}`);
-  a.preload = "auto";
-  clips[key] = a;
-});
+function loadClips() {
+  const voice = settings.voiceGender;
+  CLIP_KEYS.forEach((key) => {
+    const a = new Audio(`audio/${voice}/${key}.${audioExt}`);
+    a.preload = "auto";
+    clips[key] = a;
+  });
+}
+loadClips();
 
 let _currentClip = null;
 let _audioUnlocked = false;
 
 function unlockAudio() {
-  if (_audioUnlocked) return;
   _audioUnlocked = true;
   const ctx = getAudioCtx();
   if (ctx.state === "suspended") ctx.resume();
@@ -168,9 +182,26 @@ function unlockAudio() {
   });
 }
 
-document.addEventListener("pointerdown", unlockAudio, { once: true });
-document.addEventListener("touchstart", unlockAudio, { once: true });
-document.addEventListener("keydown", unlockAudio, { once: true });
+function tryUnlockAudio() {
+  if (_audioUnlocked) return;
+  unlockAudio();
+}
+
+document.addEventListener("pointerdown", tryUnlockAudio, { once: true });
+document.addEventListener("touchstart", tryUnlockAudio, { once: true });
+document.addEventListener("keydown", tryUnlockAudio, { once: true });
+
+function getCountdownCue(t) {
+  if (t === 10) return "n10";
+  const isVoice = settings.audioMode !== "beep";
+  if (isVoice) {
+    if (settings.countdownFrom5 && t === 5) return "count_54321";
+    if (!settings.countdownFrom5 && t === 3) return "count_321";
+    return null;
+  }
+  const beepValues = settings.countdownFrom5 ? [5, 4, 3, 2, 1] : [3, 2, 1];
+  return beepValues.includes(t) ? `n${t}` : null;
+}
 
 function speak(key, thenKey = null) {
   if (!settings.voiceEnabled) return;
@@ -329,7 +360,8 @@ class SessionEngine {
         if (this.paused) return;
         this.timeLeft--;
         const t = this.timeLeft;
-        if ([10, 3, 2, 1].includes(t)) speak(`n${t}`);
+        const cue = getCountdownCue(t);
+        if (cue) speak(cue);
         this.onTick(this._state());
         if (t <= 0) {
           clearInterval(this.timer);
@@ -386,28 +418,21 @@ class SessionEngine {
   }
 
   _announce(ph) {
-    const n = ph.round;
-    const key = {
-      ready: "ready",
-      prep: "prep",
+    const announceKey = {
       rest: "rest",
       countdown: "after_contraction",
       breath: "one_breath",
-      cooldown: "recovery",
     }[ph.kind];
     // Chain the initial countdown after the announce when the phase starts
     // at a threshold, so they don't overlap.
-    const initialCount =
-      !ph.countUp && [10, 3, 2, 1].includes(ph.dur) ? `n${ph.dur}` : null;
-    if (key) {
-      speak(key, initialCount);
+    const initialCount = !ph.countUp ? getCountdownCue(ph.dur) : null;
+    if (announceKey) {
+      speak(announceKey, initialCount);
       return;
     }
     if (ph.kind === "hold") {
-      const holdKey = n >= 1 && n <= 20 ? `hold_${n}` : null;
       const thenKey = ph.countUp ? "tap_contraction" : initialCount;
-      if (holdKey) speak(holdKey, thenKey);
-      else if (initialCount) speak(initialCount);
+      speak("hold", thenKey);
     }
   }
 
@@ -1053,6 +1078,26 @@ function renderSettings(main) {
           <option value="beep" ${settings.audioMode === "beep" ? "selected" : ""}>Beep</option>
         </select>
       </div>
+      <div class="settings-row" id="voice-gender-row" style="${settings.voiceEnabled && settings.audioMode === "voice" ? "" : "display:none"}">
+        <div class="settings-label">
+          <div class="settings-title">Voice</div>
+          <div class="settings-desc">Spoken voice gender</div>
+        </div>
+        <select class="form-input" id="select-voice-gender" style="width: auto; padding: 6px 12px; font-size: 0.85rem;">
+          <option value="female" ${settings.voiceGender === "female" ? "selected" : ""}>Female</option>
+          <option value="male" ${settings.voiceGender === "male" ? "selected" : ""}>Male</option>
+        </select>
+      </div>
+      <div class="settings-row" id="countdown-from-row" style="${settings.voiceEnabled ? "" : "display:none"}">
+        <div class="settings-label">
+          <div class="settings-title">Countdown Start</div>
+          <div class="settings-desc">When to begin the final countdown</div>
+        </div>
+        <select class="form-input" id="select-countdown-from" style="width: auto; padding: 6px 12px; font-size: 0.85rem;">
+          <option value="3" ${!settings.countdownFrom5 ? "selected" : ""}>3 seconds</option>
+          <option value="5" ${settings.countdownFrom5 ? "selected" : ""}>5 seconds</option>
+        </select>
+      </div>
     </div>
 
     <div class="delete-zone" style="margin-top: 40px">
@@ -1066,11 +1111,21 @@ function renderSettings(main) {
     </div>
   `;
 
-  document.getElementById("toggle-voice").addEventListener("change", (e) => {
-    settings.voiceEnabled = e.target.checked;
-    document.getElementById("audio-mode-row").style.display = e.target.checked
+  const updateAudioRowsVisibility = () => {
+    const enabled = settings.voiceEnabled;
+    document.getElementById("audio-mode-row").style.display = enabled
       ? ""
       : "none";
+    document.getElementById("voice-gender-row").style.display =
+      enabled && settings.audioMode === "voice" ? "" : "none";
+    document.getElementById("countdown-from-row").style.display = enabled
+      ? ""
+      : "none";
+  };
+
+  document.getElementById("toggle-voice").addEventListener("change", (e) => {
+    settings.voiceEnabled = e.target.checked;
+    updateAudioRowsVisibility();
     updateSoundBtn();
   });
 
@@ -1078,6 +1133,22 @@ function renderSettings(main) {
     .getElementById("select-audio-mode")
     .addEventListener("change", (e) => {
       settings.audioMode = e.target.value;
+      updateAudioRowsVisibility();
+    });
+
+  document
+    .getElementById("select-voice-gender")
+    .addEventListener("change", (e) => {
+      settings.voiceGender = e.target.value;
+      loadClips();
+      _audioUnlocked = false;
+      unlockAudio();
+    });
+
+  document
+    .getElementById("select-countdown-from")
+    .addEventListener("change", (e) => {
+      settings.countdownFrom5 = e.target.value === "5";
     });
 
   document.getElementById("btn-delete-all").addEventListener("click", () => {

@@ -13,36 +13,38 @@ AUDIO_DIR = Path(__file__).parent.parent / "audio"
 AUDIO_DIR.mkdir(exist_ok=True)
 
 MODEL = "mlx-community/Kokoro-82M-bf16"
-VOICE = "af_heart"
 SPEED = 0.9
 
+VOICES = {
+    "female": "af_heart",
+    "male": "am_michael",
+}
+
 CLIPS = {
-    "ready": "Get ready.",
     "rest": "Rest.",
+    "hold": "Hold.",
     "after_contraction": "Keep holding.",
     "one_breath": "Take one single breath. Tap when ready.",
     "complete": "Session complete. Well done!",
     "tap_contraction": "Tap when you feel the first contraction.",
-    "n1": "1",
-    "n2": "2",
-    "n3": "3",
-    "n10": "10",
-    **{f"hold_{i}": f"Round {i}. Hold." for i in range(1, 21)},
+    "n10": "10.",
+    "count_321": "3, 2, 1.",
+    "count_54321": "5, 4, 3, 2, 1.",
 }
 
 
-def generate_wav(key: str, text: str) -> Path:
-    wav = AUDIO_DIR / f"{key}.wav"
+def generate_wav(voice_dir: Path, voice_id: str, key: str, text: str) -> Path:
+    wav = voice_dir / f"{key}.wav"
     if wav.exists():
-        print(f"  skip (exists): {wav.name}")
+        print(f"  skip (exists): {wav.relative_to(AUDIO_DIR)}")
         return wav
-    print(f"  generating: {key!r} → {text!r}")
+    print(f"  generating: {voice_id}/{key} → {text!r}")
     generate_audio(
         text=text,
         model=MODEL,
-        voice=VOICE,
+        voice=voice_id,
         speed=SPEED,
-        output_path=str(AUDIO_DIR),
+        output_path=str(voice_dir),
         file_prefix=key,
         audio_format="wav",
         join_audio=True,
@@ -59,9 +61,9 @@ SILENCE_TRIM = (
 )
 
 
-def compress(key: str, wav: Path) -> None:
-    opus = AUDIO_DIR / f"{key}.opus"
-    mp3 = AUDIO_DIR / f"{key}.mp3"
+def compress(voice_dir: Path, key: str, wav: Path) -> None:
+    opus = voice_dir / f"{key}.opus"
+    mp3 = voice_dir / f"{key}.mp3"
 
     if not opus.exists():
         subprocess.run(
@@ -109,22 +111,32 @@ def compress(key: str, wav: Path) -> None:
 
 
 def main() -> None:
-    total = len(CLIPS)
-    print(f"Generating {total} clips with Kokoro ({VOICE}, {SPEED}x speed)…\n")
+    per_voice = len(CLIPS)
+    total = per_voice * len(VOICES)
+    print(
+        f"Generating {total} clips ({per_voice} × {len(VOICES)} voices) "
+        f"at {SPEED}x speed…\n"
+    )
 
-    wavs: dict[str, Path] = {}
-    for i, (key, text) in enumerate(CLIPS.items(), 1):
-        print(f"[{i}/{total}]", end=" ")
-        wavs[key] = generate_wav(key, text)
+    i = 0
+    for voice_label, voice_id in VOICES.items():
+        voice_dir = AUDIO_DIR / voice_label
+        voice_dir.mkdir(exist_ok=True)
+        print(f"\n── voice: {voice_label} ({voice_id}) ──")
+        wavs: dict[str, Path] = {}
+        for key, text in CLIPS.items():
+            i += 1
+            print(f"[{i}/{total}]", end=" ")
+            wavs[key] = generate_wav(voice_dir, voice_id, key, text)
 
-    print("\nCompressing to Opus + MP3…")
-    for key, wav in wavs.items():
-        if wav.exists():
-            compress(key, wav)
-            print(f"  compressed: {key}")
+        print(f"\nCompressing {voice_label} to Opus + MP3…")
+        for key, wav in wavs.items():
+            if wav.exists():
+                compress(voice_dir, key, wav)
+                print(f"  compressed: {voice_label}/{key}")
 
-    opus_files = list(AUDIO_DIR.glob("*.opus"))
-    mp3_files = list(AUDIO_DIR.glob("*.mp3"))
+    opus_files = list(AUDIO_DIR.rglob("*.opus"))
+    mp3_files = list(AUDIO_DIR.rglob("*.mp3"))
     total_bytes = sum(f.stat().st_size for f in opus_files + mp3_files)
     print(
         f"\nDone. {len(opus_files)} Opus + {len(mp3_files)} MP3 files, "

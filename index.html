@@ -13,12 +13,24 @@
         />
         <meta name="theme-color" content="#0f1923" />
         <title>Apnea Dry Training</title>
-        <link rel="preload" as="audio" href="audio/n10.opus" type="audio/webm" />
-        <link rel="preload" as="audio" href="audio/n3.opus" type="audio/webm" />
-        <link rel="preload" as="audio" href="audio/n2.opus" type="audio/webm" />
-        <link rel="preload" as="audio" href="audio/n1.opus" type="audio/webm" />
-        <link rel="preload" as="audio" href="audio/rest.opus" type="audio/webm" />
-        <link rel="preload" as="audio" href="audio/hold_1.opus" type="audio/webm" />
+        <script>
+            (function () {
+                var voice =
+                    localStorage.getItem("apnea_voice_gender") === "male"
+                        ? "male"
+                        : "female";
+                ["n10", "count_321", "count_54321", "rest", "hold"].forEach(
+                    function (key) {
+                        var l = document.createElement("link");
+                        l.rel = "preload";
+                        l.as = "audio";
+                        l.href = "audio/" + voice + "/" + key + ".opus";
+                        l.type = "audio/webm";
+                        document.head.appendChild(l);
+                    },
+                );
+            })();
+        </script>
         <script>
             (function () {
                 var v = new URLSearchParams(location.search).get("v");
