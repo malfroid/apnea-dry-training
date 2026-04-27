@@ -918,7 +918,7 @@ function renderSession(main, tableId) {
       <h2>Ready to start?</h2>
       <p>Take as much time as you need for initial relaxation and your breathe-up.</p>
       <div class="start-meta">${table.name} · ${tableSummary(table)}</div>
-      <button class="btn btn-primary" id="btn-start-session">Start First Breath Hold</button>
+      <button class="btn btn-primary" id="btn-start-session">Start Session</button>
     </div>`;
 
   document.getElementById("btn-start-session").addEventListener("click", () => {
