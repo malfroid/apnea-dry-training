@@ -914,7 +914,7 @@ function renderSession(main, tableId) {
 
   const introMsg =
     settings.relaxationDuration > 0
-      ? `${fmtTime(settings.relaxationDuration)} of relaxation will play before the first hold. Use it to settle and prepare your breathe-up.`
+      ? `Start the session with ${fmtTime(settings.relaxationDuration)} of relaxation. Use it to settle and prepare for your first breath hold.`
       : `Take as much time as you need for initial relaxation and your breathe-up.`;
 
   main.innerHTML = `
