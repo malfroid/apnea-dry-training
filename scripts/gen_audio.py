@@ -45,9 +45,10 @@ ELEVENLABS_MODEL = os.environ.get("ELEVENLABS_MODEL", "eleven_multilingual_v2")
 ELEVENLABS_OUTPUT_FORMAT = os.environ.get(
     "ELEVENLABS_OUTPUT_FORMAT", "mp3_44100_128"
 )
+ELEVENLABS_SPEED = float(os.environ.get("ELEVENLABS_SPEED", "0.9"))
 ELEVENLABS_VOICES = {
-    "female": "Brittney",
-    "male": "Jonathan Livingston",
+    "female": os.environ.get("ELEVENLABS_VOICE_FEMALE", "Lily"),
+    "male": os.environ.get("ELEVENLABS_VOICE_MALE", "George"),
 }
 
 VOICES = ELEVENLABS_VOICES if PROVIDER == "elevenlabs" else KOKORO_VOICES
@@ -92,34 +93,46 @@ def _get_eleven_client():
     return _eleven_client
 
 
-def _resolve_eleven_voice_id(name: str) -> str:
-    if name in _voice_id_cache:
-        return _voice_id_cache[name]
+def _looks_like_voice_id(s: str) -> bool:
+    """ElevenLabs voice IDs are 20-character base62 strings (no spaces)."""
+    return len(s) == 20 and s.isalnum()
+
+
+def _resolve_eleven_voice_id(name_or_id: str) -> str:
+    if name_or_id in _voice_id_cache:
+        return _voice_id_cache[name_or_id]
+    if _looks_like_voice_id(name_or_id):
+        _voice_id_cache[name_or_id] = name_or_id
+        return name_or_id
     client = _get_eleven_client()
     try:
-        result = client.voices.search(search=name)
+        result = client.voices.search(search=name_or_id)
         candidates = list(result.voices)
-    except Exception:
-        # Older SDKs or fallback path
-        candidates = list(client.voices.get_all().voices)
-        candidates = [v for v in candidates if name.lower() in v.name.lower()]
+    except Exception as e:
+        sys.exit(
+            f"Could not look up voice {name_or_id!r}: {e}\n"
+            "Either grant the API key the 'voices_read' permission in the "
+            "ElevenLabs dashboard, or pass the 20-char voice ID directly via "
+            "ELEVENLABS_VOICE_FEMALE / ELEVENLABS_VOICE_MALE."
+        )
 
     exact = next(
-        (v for v in candidates if v.name.lower() == name.lower()), None
+        (v for v in candidates if v.name.lower() == name_or_id.lower()), None
     )
     chosen = exact or (candidates[0] if candidates else None)
     if chosen is None:
         sys.exit(
-            f"No ElevenLabs voice matching {name!r}. "
+            f"No ElevenLabs voice matching {name_or_id!r}. "
             "Add it to your voice library in the ElevenLabs dashboard first."
         )
-    if chosen.name.lower() != name.lower():
-        print(f"  ⚠ no exact match for {name!r}; using {chosen.name!r}")
-    _voice_id_cache[name] = chosen.voice_id
+    if chosen.name.lower() != name_or_id.lower():
+        print(f"  ⚠ no exact match for {name_or_id!r}; using {chosen.name!r}")
+    _voice_id_cache[name_or_id] = chosen.voice_id
     return chosen.voice_id
 
 
 def _synth_elevenlabs(voice_name: str, text: str, out_wav: Path) -> None:
+    from elevenlabs.types import VoiceSettings
     client = _get_eleven_client()
     voice_id = _resolve_eleven_voice_id(voice_name)
     chunks = client.text_to_speech.convert(
@@ -127,6 +140,11 @@ def _synth_elevenlabs(voice_name: str, text: str, out_wav: Path) -> None:
         voice_id=voice_id,
         model_id=ELEVENLABS_MODEL,
         output_format=ELEVENLABS_OUTPUT_FORMAT,
+        voice_settings=VoiceSettings(
+            stability=0.5,
+            similarity_boost=0.75,
+            speed=ELEVENLABS_SPEED,
+        ),
     )
     audio_bytes = b"".join(chunks)
     tmp = out_wav.with_suffix(".tts.tmp")
