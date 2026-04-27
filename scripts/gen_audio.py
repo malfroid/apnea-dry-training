@@ -1,24 +1,56 @@
 # /// script
 # requires-python = ">=3.12"
-# dependencies = ["mlx-audio[tts]"]
+# dependencies = ["mlx-audio[tts]", "elevenlabs>=1.0", "python-dotenv"]
 # ///
 
+"""
+Generate the voice clips used by the app.
+
+Two backends:
+
+  AUDIO_PROVIDER=local       (default) — on-device Kokoro TTS via mlx-audio.
+  AUDIO_PROVIDER=elevenlabs              ElevenLabs cloud TTS.
+
+ElevenLabs requires ELEVEN_LABS_API_KEY in the environment or the
+project's .env file. Voices are looked up by name in your ElevenLabs
+voice library, so add Brittney and Jonathan Livingston there first.
+
+Existing .opus + .mp3 outputs are skipped, so re-running is safe and
+won't burn ElevenLabs credits unless you delete the target files.
+"""
+
+import os
 import subprocess
 import sys
 from pathlib import Path
 
-from mlx_audio.tts.generate import generate_audio
-
 AUDIO_DIR = Path(__file__).parent.parent / "audio"
 AUDIO_DIR.mkdir(exist_ok=True)
+PROJECT_ROOT = Path(__file__).parent.parent
 
-MODEL = "mlx-community/Kokoro-82M-bf16"
-SPEED = 0.9
+PROVIDER = os.environ.get("AUDIO_PROVIDER", "local").lower()
+if PROVIDER not in ("local", "elevenlabs"):
+    sys.exit(f"AUDIO_PROVIDER must be 'local' or 'elevenlabs' (got {PROVIDER!r})")
 
-VOICES = {
+# ── Local (Kokoro) ────────────────────────────────────────────────
+KOKORO_MODEL = "mlx-community/Kokoro-82M-bf16"
+KOKORO_SPEED = 0.9
+KOKORO_VOICES = {
     "female": "af_heart",
     "male": "am_michael",
 }
+
+# ── ElevenLabs ────────────────────────────────────────────────────
+ELEVENLABS_MODEL = os.environ.get("ELEVENLABS_MODEL", "eleven_multilingual_v2")
+ELEVENLABS_OUTPUT_FORMAT = os.environ.get(
+    "ELEVENLABS_OUTPUT_FORMAT", "mp3_44100_128"
+)
+ELEVENLABS_VOICES = {
+    "female": "Brittney",
+    "male": "Jonathan Livingston",
+}
+
+VOICES = ELEVENLABS_VOICES if PROVIDER == "elevenlabs" else KOKORO_VOICES
 
 CLIPS = {
     "breathe": "Breathe.",
@@ -40,28 +72,105 @@ COUNT_CLIPS = {
 SECONDS_PER_NUMBER = 1.0
 
 
-def generate_wav(voice_dir: Path, voice_id: str, key: str, text: str) -> Path:
-    wav = voice_dir / f"{key}.wav"
-    opus = voice_dir / f"{key}.opus"
-    mp3 = voice_dir / f"{key}.mp3"
-    if opus.exists() and mp3.exists():
-        # Already encoded; skip TTS regeneration
-        return wav
-    if wav.exists():
-        print(f"  skip (exists): {wav.relative_to(AUDIO_DIR)}")
-        return wav
-    print(f"  generating: {voice_id}/{key} → {text!r}")
+# ── ElevenLabs client (lazy) ──────────────────────────────────────
+_eleven_client = None
+_voice_id_cache: dict[str, str] = {}
+
+
+def _get_eleven_client():
+    global _eleven_client
+    if _eleven_client is not None:
+        return _eleven_client
+    from dotenv import load_dotenv
+    from elevenlabs.client import ElevenLabs
+
+    load_dotenv(PROJECT_ROOT / ".env")
+    api_key = os.environ.get("ELEVEN_LABS_API_KEY")
+    if not api_key:
+        sys.exit("ELEVEN_LABS_API_KEY not set (check .env or environment).")
+    _eleven_client = ElevenLabs(api_key=api_key)
+    return _eleven_client
+
+
+def _resolve_eleven_voice_id(name: str) -> str:
+    if name in _voice_id_cache:
+        return _voice_id_cache[name]
+    client = _get_eleven_client()
+    try:
+        result = client.voices.search(search=name)
+        candidates = list(result.voices)
+    except Exception:
+        # Older SDKs or fallback path
+        candidates = list(client.voices.get_all().voices)
+        candidates = [v for v in candidates if name.lower() in v.name.lower()]
+
+    exact = next(
+        (v for v in candidates if v.name.lower() == name.lower()), None
+    )
+    chosen = exact or (candidates[0] if candidates else None)
+    if chosen is None:
+        sys.exit(
+            f"No ElevenLabs voice matching {name!r}. "
+            "Add it to your voice library in the ElevenLabs dashboard first."
+        )
+    if chosen.name.lower() != name.lower():
+        print(f"  ⚠ no exact match for {name!r}; using {chosen.name!r}")
+    _voice_id_cache[name] = chosen.voice_id
+    return chosen.voice_id
+
+
+def _synth_elevenlabs(voice_name: str, text: str, out_wav: Path) -> None:
+    client = _get_eleven_client()
+    voice_id = _resolve_eleven_voice_id(voice_name)
+    chunks = client.text_to_speech.convert(
+        text=text,
+        voice_id=voice_id,
+        model_id=ELEVENLABS_MODEL,
+        output_format=ELEVENLABS_OUTPUT_FORMAT,
+    )
+    audio_bytes = b"".join(chunks)
+    tmp = out_wav.with_suffix(".tts.tmp")
+    tmp.write_bytes(audio_bytes)
+    # Decode whatever ElevenLabs returned into a mono 44.1kHz WAV so the
+    # downstream ffmpeg pipeline behaves identically to the local backend.
+    subprocess.run(
+        ["ffmpeg", "-y", "-i", str(tmp), "-ac", "1", "-ar", "44100",
+         str(out_wav)],
+        check=True,
+        capture_output=True,
+    )
+    tmp.unlink()
+
+
+def _synth_local(voice_id: str, key: str, text: str, voice_dir: Path) -> None:
+    from mlx_audio.tts.generate import generate_audio
     generate_audio(
         text=text,
-        model=MODEL,
+        model=KOKORO_MODEL,
         voice=voice_id,
-        speed=SPEED,
+        speed=KOKORO_SPEED,
         output_path=str(voice_dir),
         file_prefix=key,
         audio_format="wav",
         join_audio=True,
         verbose=False,
     )
+
+
+def generate_wav(voice_dir: Path, voice_id: str, key: str, text: str) -> Path:
+    wav = voice_dir / f"{key}.wav"
+    opus = voice_dir / f"{key}.opus"
+    mp3 = voice_dir / f"{key}.mp3"
+    if opus.exists() and mp3.exists():
+        return wav
+    if wav.exists():
+        print(f"  skip (exists): {wav.relative_to(AUDIO_DIR)}")
+        return wav
+    print(f"  generating: {voice_id}/{key} → {text!r}")
+    if PROVIDER == "elevenlabs":
+        _synth_elevenlabs(voice_id, text, wav)
+    else:
+        _synth_local(voice_id, key, text, voice_dir)
     return wav
 
 
@@ -82,6 +191,12 @@ def build_count_wav(
     voice_dir: Path, voice_id: str, key: str, numbers: list[int]
 ) -> Path:
     out_wav = voice_dir / f"{key}.wav"
+    out_opus = voice_dir / f"{key}.opus"
+    out_mp3 = voice_dir / f"{key}.mp3"
+    # Skip the (expensive) per-digit synth when the final encoded clips
+    # already exist — important for ElevenLabs runs.
+    if out_opus.exists() and out_mp3.exists():
+        return out_wav
     if out_wav.exists():
         return out_wav
 
@@ -91,17 +206,10 @@ def build_count_wav(
         raw = voice_dir / f"_num_{n}.wav"
         if not raw.exists():
             print(f"  generating part: {voice_id}/{n}")
-            generate_audio(
-                text=f"{n}.",
-                model=MODEL,
-                voice=voice_id,
-                speed=SPEED,
-                output_path=str(voice_dir),
-                file_prefix=f"_num_{n}",
-                audio_format="wav",
-                join_audio=True,
-                verbose=False,
-            )
+            if PROVIDER == "elevenlabs":
+                _synth_elevenlabs(voice_id, f"{n}.", raw)
+            else:
+                _synth_local(voice_id, f"_num_{n}", f"{n}.", voice_dir)
         raw_parts[n] = raw
 
     fixed_parts: dict[int, Path] = {}
@@ -173,13 +281,56 @@ def compress(voice_dir: Path, key: str, wav: Path) -> None:
         wav.unlink()
 
 
+def _estimate_credits() -> int:
+    """Worst-case ElevenLabs character count (1 char ≈ 1 credit on standard models)."""
+    chars = sum(len(t) for t in CLIPS.values())
+    chars += sum(len(f"{n}.") for nums in COUNT_CLIPS.values() for n in set(nums))
+    return chars * len(VOICES)
+
+
+def _which_clips_need_synth() -> int:
+    """Count clips that don't yet have both .opus and .mp3 on disk."""
+    n = 0
+    for voice_label in VOICES:
+        voice_dir = AUDIO_DIR / voice_label
+        for key in CLIPS:
+            if not (
+                (voice_dir / f"{key}.opus").exists()
+                and (voice_dir / f"{key}.mp3").exists()
+            ):
+                n += 1
+        for key in COUNT_CLIPS:
+            if not (
+                (voice_dir / f"{key}.opus").exists()
+                and (voice_dir / f"{key}.mp3").exists()
+            ):
+                n += 1
+    return n
+
+
 def main() -> None:
+    if PROVIDER == "elevenlabs":
+        pending = _which_clips_need_synth()
+        worst_case = _estimate_credits()
+        print(
+            f"Provider: ElevenLabs · model={ELEVENLABS_MODEL} · "
+            f"format={ELEVENLABS_OUTPUT_FORMAT}"
+        )
+        print(f"Voices: {list(VOICES.values())}")
+        print(
+            f"Clips needing synth: {pending}. "
+            f"Worst-case ≈ {worst_case} credits if all were missing.\n"
+        )
+        if pending > 0 and sys.stdin.isatty():
+            ans = input("Proceed with ElevenLabs synthesis? [y/N] ").strip().lower()
+            if ans != "y":
+                sys.exit("Aborted.")
+    else:
+        print(f"Provider: local Kokoro at {KOKORO_SPEED}x speed.\n")
+
     per_voice = len(CLIPS) + len(COUNT_CLIPS)
     total = per_voice * len(VOICES)
-    print(
-        f"Generating {total} clips ({per_voice} × {len(VOICES)} voices) "
-        f"at {SPEED}x speed…\n"
-    )
+    print(f"Generating up to {total} clips ({per_voice} × {len(VOICES)} voices)…\n")
 
     i = 0
     for voice_label, voice_id in VOICES.items():
