@@ -325,7 +325,6 @@ class SessionEngine {
         this.onTick(this._state());
       }, 1000);
     } else {
-      if ([10, 3, 2, 1].includes(this.timeLeft)) speak(`n${this.timeLeft}`);
       this.timer = setInterval(() => {
         if (this.paused) return;
         this.timeLeft--;
@@ -396,13 +395,19 @@ class SessionEngine {
       breath: "one_breath",
       cooldown: "recovery",
     }[ph.kind];
+    // Chain the initial countdown after the announce when the phase starts
+    // at a threshold, so they don't overlap.
+    const initialCount =
+      !ph.countUp && [10, 3, 2, 1].includes(ph.dur) ? `n${ph.dur}` : null;
     if (key) {
-      speak(key);
+      speak(key, initialCount);
       return;
     }
     if (ph.kind === "hold") {
       const holdKey = n >= 1 && n <= 20 ? `hold_${n}` : null;
-      if (holdKey) speak(holdKey, ph.countUp ? "tap_contraction" : null);
+      const thenKey = ph.countUp ? "tap_contraction" : initialCount;
+      if (holdKey) speak(holdKey, thenKey);
+      else if (initialCount) speak(initialCount);
     }
   }
 
