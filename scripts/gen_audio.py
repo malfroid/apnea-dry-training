@@ -46,6 +46,8 @@ ELEVENLABS_OUTPUT_FORMAT = os.environ.get(
     "ELEVENLABS_OUTPUT_FORMAT", "mp3_44100_128"
 )
 ELEVENLABS_SPEED = float(os.environ.get("ELEVENLABS_SPEED", "0.9"))
+ELEVENLABS_STABILITY = float(os.environ.get("ELEVENLABS_STABILITY", "0.75"))
+ELEVENLABS_SIMILARITY = float(os.environ.get("ELEVENLABS_SIMILARITY", "0.55"))
 ELEVENLABS_VOICES = {
     "female": os.environ.get("ELEVENLABS_VOICE_FEMALE", "Lily"),
     "male": os.environ.get("ELEVENLABS_VOICE_MALE", "George"),
@@ -141,8 +143,8 @@ def _synth_elevenlabs(voice_name: str, text: str, out_wav: Path) -> None:
         model_id=ELEVENLABS_MODEL,
         output_format=ELEVENLABS_OUTPUT_FORMAT,
         voice_settings=VoiceSettings(
-            stability=0.5,
-            similarity_boost=0.75,
+            stability=ELEVENLABS_STABILITY,
+            similarity_boost=ELEVENLABS_SIMILARITY,
             speed=ELEVENLABS_SPEED,
         ),
     )
