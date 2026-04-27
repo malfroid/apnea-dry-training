@@ -86,7 +86,7 @@ const settings = {
     localStorage.setItem("apnea_voice", v ? "on" : "off");
   },
   get audioMode() {
-    return localStorage.getItem("apnea_audio_mode") || "voice";
+    return localStorage.getItem("apnea_audio_mode") || "beep";
   },
   set audioMode(v) {
     localStorage.setItem("apnea_audio_mode", v);
