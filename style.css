@@ -10,7 +10,7 @@
     --surface2: #243045;
     --accent: #3a7bd5;
     --hold: #e05555;
-    --rest: #55a86e;
+    --breathe: #55a86e;
     --prep: #5599e0;
     --text: #e0e8f0;
     --text2: #8899aa;
@@ -521,8 +521,8 @@ input:checked + .slider:before {
 .phase-hold {
     color: var(--hold);
 }
-.phase-rest {
-    color: var(--rest);
+.phase-breathe {
+    color: var(--breathe);
 }
 .phase-prep {
     color: var(--prep);
@@ -677,7 +677,7 @@ input:checked + .slider:before {
     color: var(--border);
 }
 .badge-ok {
-    color: var(--rest);
+    color: var(--breathe);
 }
 .badge-partial {
     color: #e09050;

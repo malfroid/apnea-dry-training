@@ -21,7 +21,7 @@ VOICES = {
 }
 
 CLIPS = {
-    "rest": "Rest.",
+    "breathe": "Breathe.",
     "hold": "Hold.",
     "after_contraction": "Keep holding.",
     "one_breath": "Take one single breath. Tap when ready.",

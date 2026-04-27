@@ -153,7 +153,7 @@ const audioExt =
   new Audio().canPlayType("audio/webm; codecs=opus") !== "" ? "opus" : "mp3";
 
 const CLIP_KEYS = [
-  "rest",
+  "breathe",
   "hold",
   "relax",
   "after_contraction",
@@ -331,7 +331,7 @@ class SessionEngine {
       for (let i = 0; i < rounds.length; i++) {
         phases.push({ kind: "hold", dur: rounds[i].hold, round: i + 1 });
         if (i < rounds.length - 1)
-          phases.push({ kind: "rest", dur: rounds[i].rest, round: i + 1 });
+          phases.push({ kind: "breathe", dur: rounds[i].rest, round: i + 1 });
       }
     }
 
@@ -467,7 +467,7 @@ class SessionEngine {
 
   _announce(ph) {
     const announceKey = {
-      rest: "rest",
+      breathe: "breathe",
       countdown: "after_contraction",
       breath: "one_breath",
       relax: "relax",
@@ -580,14 +580,14 @@ function tableSummary(t) {
   switch (t.type) {
     case "co2":
       return (
-        `${p.rounds} rounds · hold ${fmtTime(p.holdTime)} · rest ` +
+        `${p.rounds} rounds · hold ${fmtTime(p.holdTime)} · breathe ` +
         `${fmtTime(p.startRest)} → ${fmtTime(Math.max(10, p.startRest - (p.rounds - 1) * p.restDecrement))}`
       );
     case "o2":
       return (
         `${p.rounds} rounds · hold ` +
         `${fmtTime(p.startHold)} → ${fmtTime(p.startHold + (p.rounds - 1) * p.holdIncrement)}` +
-        ` · rest ${fmtTime(p.restTime)}`
+        ` · breathe ${fmtTime(p.restTime)}`
       );
     case "wonka":
       return `${p.breathholds} breathholds · hold ${p.countdownAfterContraction} more seconds`;
@@ -605,7 +605,7 @@ function phaseLabel(kind) {
       prep: "Preparation",
       relax: "Relax",
       hold: "Hold",
-      rest: "Rest",
+      breathe: "Breathe",
       countdown: "Hold",
       breath: "One Single Breath",
       cooldown: "Recovery",
@@ -615,7 +615,7 @@ function phaseLabel(kind) {
 
 function phaseClass(kind) {
   if (kind === "hold" || kind === "countdown") return "phase-hold";
-  if (kind === "rest" || kind === "cooldown") return "phase-rest";
+  if (kind === "breathe" || kind === "cooldown") return "phase-breathe";
   return "phase-prep";
 }
 
@@ -759,11 +759,11 @@ function renderEdit(main, id) {
           ${timePairHtml("f-holdTime", p.holdTime ?? 90)}
         </div>
         <div class="form-group">
-          <label class="form-label">Starting Rest Time</label>
+          <label class="form-label">Starting Breathe Time</label>
           ${timePairHtml("f-startRest", p.startRest ?? 120)}
         </div>
         <div class="form-group">
-          <label class="form-label">Rest Decrement per Round (sec)</label>
+          <label class="form-label">Breathe Decrement per Round (sec)</label>
           <input class="form-input" id="f-restDecrement" type="number" min="0" max="120" value="${p.restDecrement ?? 15}">
         </div>`;
     } else if (t === "o2") {
@@ -781,7 +781,7 @@ function renderEdit(main, id) {
           <input class="form-input" id="f-holdIncrement" type="number" min="0" max="120" value="${p.holdIncrement ?? 15}">
         </div>
         <div class="form-group">
-          <label class="form-label">Rest Time (fixed)</label>
+          <label class="form-label">Breathe Time (fixed)</label>
           ${timePairHtml("f-restTime", p.restTime ?? 120)}
         </div>`;
     } else if (t === "wonka") {
@@ -809,7 +809,7 @@ function renderEdit(main, id) {
         <span class="round-num">${i + 1}</span>
         <span class="round-label">Hold</span>
         <input class="round-time" type="text" value="${fmtTime(r.hold)}" placeholder="1:30">
-        <span class="round-label" style="margin-left:6px">Rest</span>
+        <span class="round-label" style="margin-left:6px">Breathe</span>
         <input class="round-time" type="text" value="${fmtTime(r.rest)}" placeholder="2:00">
         <span class="round-sep"></span>
         <button type="button" class="btn-remove" data-idx="${i}" title="Remove">✕</button>

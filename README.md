@@ -22,10 +22,10 @@ No build step. No dependencies.
 
 | Type | Description |
 |------|-------------|
-| CO₂  | Fixed hold, decreasing rest — builds CO₂ tolerance |
-| O₂   | Increasing hold, fixed rest — builds O₂ efficiency |
+| CO₂  | Fixed hold, decreasing breathe — builds CO₂ tolerance |
+| O₂   | Increasing hold, fixed breathe — builds O₂ efficiency |
 | Wonka | Hold until first contraction, then countdown — variation of CO₂ |
-| Custom | Set hold and rest per round manually |
+| Custom | Set hold and breathe per round manually |
 
 ## Tips
 
