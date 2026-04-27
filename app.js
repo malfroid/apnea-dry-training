@@ -155,6 +155,7 @@ const audioExt =
 const CLIP_KEYS = [
   "breathe",
   "hold",
+  "hold_breath_in",
   "relax",
   "after_contraction",
   "one_breath",
@@ -222,10 +223,13 @@ function stopRelaxSound() {
   _relaxSound = null;
 }
 
-function getCountdownCue(t) {
+function getCountdownCue(t, next = null) {
   if (t === 10) return "n10";
   const isVoice = settings.audioMode !== "beep";
   if (isVoice) {
+    // Lead-in 2 seconds before the countdown when the next phase is a hold.
+    const leadInT = settings.countdownFrom5 ? 7 : 5;
+    if (next?.kind === "hold" && t === leadInT) return "hold_breath_in";
     if (settings.countdownFrom5 && t === 5) return "count_54321";
     if (!settings.countdownFrom5 && t === 3) return "count_321";
     return null;
@@ -399,7 +403,8 @@ class SessionEngine {
         if (this.paused) return;
         this.timeLeft--;
         const t = this.timeLeft;
-        const cue = getCountdownCue(t);
+        const next = this.phases[idx + 1];
+        const cue = getCountdownCue(t, next);
         if (cue) speak(cue);
         this.onTick(this._state());
         if (t <= 0) {

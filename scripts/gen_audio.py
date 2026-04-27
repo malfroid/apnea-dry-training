@@ -58,12 +58,19 @@ VOICES = ELEVENLABS_VOICES if PROVIDER == "elevenlabs" else KOKORO_VOICES
 CLIPS = {
     "breathe": "Breathe.",
     "hold": "Hold.",
+    "hold_breath_in": "Hold your breath in.",
     "after_contraction": "Keep holding.",
     "one_breath": "Take one single breath. Tap when ready.",
     "complete": "Session complete. Well done!",
     "tap_contraction": "Tap when you feel the first contraction.",
     "n10": "10.",
     "relax": "Take this time to relax. Breathe slowly and deeply.",
+}
+
+# Per-clip speed override; falls back to ELEVENLABS_SPEED otherwise. Used for
+# clips we want noticeably slower than the rest, e.g. the hold lead-in.
+CLIP_SPEED = {
+    "hold_breath_in": 0.8,
 }
 
 # Built by concatenating individually-spoken numbers, each padded to exactly
@@ -133,7 +140,9 @@ def _resolve_eleven_voice_id(name_or_id: str) -> str:
     return chosen.voice_id
 
 
-def _synth_elevenlabs(voice_name: str, text: str, out_wav: Path) -> None:
+def _synth_elevenlabs(
+    voice_name: str, text: str, out_wav: Path, speed: float | None = None
+) -> None:
     from elevenlabs.types import VoiceSettings
     client = _get_eleven_client()
     voice_id = _resolve_eleven_voice_id(voice_name)
@@ -145,7 +154,7 @@ def _synth_elevenlabs(voice_name: str, text: str, out_wav: Path) -> None:
         voice_settings=VoiceSettings(
             stability=ELEVENLABS_STABILITY,
             similarity_boost=ELEVENLABS_SIMILARITY,
-            speed=ELEVENLABS_SPEED,
+            speed=speed if speed is not None else ELEVENLABS_SPEED,
         ),
     )
     audio_bytes = b"".join(chunks)
@@ -188,7 +197,7 @@ def generate_wav(voice_dir: Path, voice_id: str, key: str, text: str) -> Path:
         return wav
     print(f"  generating: {voice_id}/{key} → {text!r}")
     if PROVIDER == "elevenlabs":
-        _synth_elevenlabs(voice_id, text, wav)
+        _synth_elevenlabs(voice_id, text, wav, speed=CLIP_SPEED.get(key))
     else:
         _synth_local(voice_id, key, text, voice_dir)
     return wav
