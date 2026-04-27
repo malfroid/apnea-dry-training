@@ -399,10 +399,8 @@ class SessionEngine {
         if (this.paused) return;
         this.timeLeft--;
         const t = this.timeLeft;
-        if (ph.kind !== "relax") {
-          const cue = getCountdownCue(t);
-          if (cue) speak(cue);
-        }
+        const cue = getCountdownCue(t);
+        if (cue) speak(cue);
         this.onTick(this._state());
         if (t <= 0) {
           clearInterval(this.timer);
@@ -468,10 +466,8 @@ class SessionEngine {
       relax: "relax",
     }[ph.kind];
     // Chain the initial countdown after the announce when the phase starts
-    // at a threshold, so they don't overlap. Skip during relax — the count
-    // would disrupt the calm.
-    const initialCount =
-      !ph.countUp && ph.kind !== "relax" ? getCountdownCue(ph.dur) : null;
+    // at a threshold, so they don't overlap.
+    const initialCount = !ph.countUp ? getCountdownCue(ph.dur) : null;
     if (announceKey) {
       speak(announceKey, initialCount);
       return;
