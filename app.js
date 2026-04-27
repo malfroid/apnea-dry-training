@@ -912,11 +912,16 @@ function renderSession(main, tableId) {
     return;
   }
 
+  const introMsg =
+    settings.relaxationDuration > 0
+      ? `${fmtTime(settings.relaxationDuration)} of relaxation will play before the first hold. Use it to settle and prepare your breathe-up.`
+      : `Take as much time as you need for initial relaxation and your breathe-up.`;
+
   main.innerHTML = `
     <div class="session-start-screen">
       <div class="start-icon">${typeIcon(table.type)}</div>
       <h2>Ready to start?</h2>
-      <p>Take as much time as you need for initial relaxation and your breathe-up.</p>
+      <p>${introMsg}</p>
       <div class="start-meta">${table.name} · ${tableSummary(table)}</div>
       <button class="btn btn-primary" id="btn-start-session">Start Session</button>
     </div>`;
