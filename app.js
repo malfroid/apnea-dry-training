@@ -35,8 +35,9 @@ const db = {
     localStorage.removeItem("apnea_sessions");
   },
   clearAllData() {
-    localStorage.removeItem("apnea_tables");
-    localStorage.removeItem("apnea_sessions");
+    for (const key of Object.keys(localStorage)) {
+      if (key.startsWith("apnea_")) localStorage.removeItem(key);
+    }
   },
 };
 
@@ -1047,7 +1048,7 @@ function renderSettings(main) {
 
     <div class="delete-zone" style="margin-top: 40px">
       <button class="btn btn-danger" id="btn-delete-all">Delete All Data</button>
-      <p class="settings-help">This will permanently delete all your training tables and history.</p>
+      <p class="settings-help">This will permanently delete all your training tables, history, and preferences.</p>
     </div>
 
     <div class="delete-zone" style="margin-top: 24px">
@@ -1073,12 +1074,11 @@ function renderSettings(main) {
   document.getElementById("btn-delete-all").addEventListener("click", () => {
     if (
       confirm(
-        "Delete ALL data? This will remove all your custom tables and training history. This cannot be undone.",
+        "Delete ALL data? This will remove all your custom tables, training history, and preferences. This cannot be undone.",
       )
     ) {
       db.clearAllData();
-      alert("All data has been cleared.");
-      navigate("tables");
+      location.href = location.pathname;
     }
   });
 
