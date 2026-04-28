@@ -100,7 +100,7 @@ const settings = {
     localStorage.setItem("apnea_voice_gender", v === "male" ? "male" : "female");
   },
   get countdownFrom5() {
-    return localStorage.getItem("apnea_countdown_from_5") === "true";
+    return localStorage.getItem("apnea_countdown_from_5") !== "false";
   },
   set countdownFrom5(v) {
     localStorage.setItem("apnea_countdown_from_5", v ? "true" : "false");
@@ -155,13 +155,11 @@ const audioExt =
 const CLIP_KEYS = [
   "breathe",
   "hold",
-  "hold_breath_in",
   "relax",
   "after_contraction",
   "one_breath",
   "complete",
   "tap_contraction",
-  "n10",
   "count_321",
   "count_54321",
 ];
@@ -223,11 +221,8 @@ function stopRelaxSound() {
   _relaxSound = null;
 }
 
-function getCountdownCue(t, next = null) {
+function getCountdownCue(t) {
   const isVoice = settings.audioMode !== "beep";
-  // Lead-in 2 seconds before the "10" marker when the next phase is a hold.
-  if (isVoice && next?.kind === "hold" && t === 12) return "hold_breath_in";
-  if (t === 10) return "n10";
   if (isVoice) {
     if (settings.countdownFrom5 && t === 5) return "count_54321";
     if (!settings.countdownFrom5 && t === 3) return "count_321";
@@ -242,14 +237,10 @@ function speak(key, thenKey = null) {
 
   if (settings.audioMode === "beep") {
     // Simple beep logic:
-    // n10 -> Double beep (10s warning)
-    // n3, n2, n1 -> Standard beep (final countdown)
+    // n5..n1 -> Standard beep (final countdown)
     // Start of hold (hold_n) -> Higher beep
     // Complete -> Sequence of beeps
-    if (key === "n10") {
-      playBeep(440, 0.1);
-      setTimeout(() => playBeep(440, 0.1), 180);
-    } else if (key.startsWith("n")) {
+    if (key.startsWith("n")) {
       playBeep(440, 0.1);
     } else if (key.startsWith("hold")) {
       playBeep(880, 0.2);
@@ -402,8 +393,7 @@ class SessionEngine {
         if (this.paused) return;
         this.timeLeft--;
         const t = this.timeLeft;
-        const next = this.phases[idx + 1];
-        const cue = getCountdownCue(t, next);
+        const cue = getCountdownCue(t);
         if (cue) speak(cue);
         this.onTick(this._state());
         if (t <= 0) {
