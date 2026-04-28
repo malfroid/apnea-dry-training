@@ -94,7 +94,7 @@ const settings = {
   },
   get voiceGender() {
     const v = localStorage.getItem("apnea_voice_gender");
-    return v === "male" ? "male" : "female";
+    return v === "female" ? "female" : "male";
   },
   set voiceGender(v) {
     localStorage.setItem("apnea_voice_gender", v === "male" ? "male" : "female");
