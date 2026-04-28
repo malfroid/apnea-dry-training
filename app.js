@@ -707,22 +707,140 @@ function renderTables(main) {
 }
 
 // ─────────────────────────────────────────────
-// View: Edit
+// View: Edit — input components
 // ─────────────────────────────────────────────
-function timePairHtml(name, totalSec = 0) {
-  const m = Math.floor(totalSec / 60);
-  const s = totalSec % 60;
-  return `<div class="time-pair">
-    <input type="number" id="${name}_m" min="0" max="99"  value="${m}" placeholder="0">
-    <span>:</span>
-    <input type="number" id="${name}_s" min="0" max="59"  value="${s.toString().padStart(2, "0")}" placeholder="00">
+
+// Generic integer stepper: [ − ]  N  [ + ]
+function stepperHtml(name, { value, min = 0, max = 99, step = 1 } = {}) {
+  return `<div class="stepper" data-name="${name}" data-min="${min}" data-max="${max}" data-step="${step}">
+    <button type="button" class="stepper-btn" data-dir="-1" aria-label="Decrease">−</button>
+    <input type="text" inputmode="numeric" class="stepper-value" value="${value}">
+    <button type="button" class="stepper-btn" data-dir="1" aria-label="Increase">+</button>
   </div>`;
 }
 
-function getTimePair(name) {
-  const m = parseInt(document.getElementById(name + "_m")?.value) || 0;
-  const s = parseInt(document.getElementById(name + "_s")?.value) || 0;
-  return m * 60 + s;
+function getStepper(name) {
+  const el = document.querySelector(`.stepper[data-name="${name}"]`);
+  if (!el) return 0;
+  const input = el.querySelector(".stepper-value");
+  const min = parseInt(el.dataset.min);
+  const max = parseInt(el.dataset.max);
+  const v = parseInt(input.value);
+  if (Number.isNaN(v)) return min;
+  return Math.max(min, Math.min(max, v));
+}
+
+function wireStepper(name, { onChange } = {}) {
+  const el = document.querySelector(`.stepper[data-name="${name}"]`);
+  if (!el) return;
+  const input = el.querySelector(".stepper-value");
+  const min = parseInt(el.dataset.min);
+  const max = parseInt(el.dataset.max);
+  const step = parseInt(el.dataset.step);
+  const set = (v) => {
+    v = Math.max(min, Math.min(max, v));
+    input.value = v;
+    onChange?.();
+  };
+  el.querySelectorAll(".stepper-btn").forEach((btn) => {
+    const dir = parseInt(btn.dataset.dir);
+    let timer = null;
+    let ticks = 0;
+    const tick = () => {
+      ticks++;
+      set((parseInt(input.value) || 0) + dir * step);
+    };
+    const start = (e) => {
+      e.preventDefault();
+      ticks = 0;
+      tick();
+      timer = setTimeout(function repeat() {
+        tick();
+        timer = setTimeout(repeat, 70);
+      }, 350);
+    };
+    const stop = () => {
+      if (timer) {
+        clearTimeout(timer);
+        timer = null;
+      }
+    };
+    btn.addEventListener("pointerdown", start);
+    btn.addEventListener("pointerup", stop);
+    btn.addEventListener("pointerleave", stop);
+    btn.addEventListener("pointercancel", stop);
+  });
+  input.addEventListener("focus", () => input.select());
+  input.addEventListener("blur", () => {
+    const v = parseInt(input.value);
+    set(Number.isNaN(v) ? min : v);
+  });
+  input.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") input.blur();
+  });
+}
+
+// Time stepper: [ −5s ]  m:ss  [ +5s ] (with hold-to-repeat acceleration)
+function timeStepperHtml(name, totalSec = 0, { compact = false } = {}) {
+  const cls = "time-stepper" + (compact ? " time-stepper-compact" : "");
+  return `<div class="${cls}" data-name="${name}">
+    <button type="button" class="ts-btn" data-dir="-1" aria-label="Decrease">−</button>
+    <input type="text" inputmode="numeric" class="ts-value" value="${fmtTime(totalSec)}">
+    <button type="button" class="ts-btn" data-dir="1" aria-label="Increase">+</button>
+  </div>`;
+}
+
+function getTimeStepper(name) {
+  const el = document.querySelector(`.time-stepper[data-name="${name}"]`);
+  if (!el) return 0;
+  return parseTimeStr(el.querySelector(".ts-value").value);
+}
+
+function wireTimeStepper(name, { onChange } = {}) {
+  const el = document.querySelector(`.time-stepper[data-name="${name}"]`);
+  if (!el) return;
+  const input = el.querySelector(".ts-value");
+  const compact = el.classList.contains("time-stepper-compact");
+  const max = 99 * 60 + 59;
+  const set = (sec) => {
+    sec = Math.max(0, Math.min(max, Math.round(sec / 5) * 5));
+    input.value = fmtTime(sec);
+    onChange?.();
+  };
+  el.querySelectorAll(".ts-btn").forEach((btn) => {
+    const dir = parseInt(btn.dataset.dir);
+    let timer = null;
+    let ticks = 0;
+    const stepNow = () => (compact ? 5 : ticks > 4 ? 15 : 5);
+    const tick = () => {
+      ticks++;
+      set(parseTimeStr(input.value) + dir * stepNow());
+    };
+    const start = (e) => {
+      e.preventDefault();
+      ticks = 0;
+      tick();
+      timer = setTimeout(function repeat() {
+        tick();
+        timer = setTimeout(repeat, 80);
+      }, 350);
+    };
+    const stop = () => {
+      if (timer) {
+        clearTimeout(timer);
+        timer = null;
+      }
+    };
+    btn.addEventListener("pointerdown", start);
+    btn.addEventListener("pointerup", stop);
+    btn.addEventListener("pointerleave", stop);
+    btn.addEventListener("pointercancel", stop);
+  });
+  input.addEventListener("focus", () => input.select());
+  input.addEventListener("blur", () => set(parseTimeStr(input.value)));
+  input.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") input.blur();
+  });
 }
 
 function renderEdit(main, id) {
@@ -744,9 +862,21 @@ function renderEdit(main, id) {
       </select>
     </div>
     <div id="type-fields"></div>
+    <div id="schedule-preview" class="schedule-preview"></div>
     ${id ? `<div class="delete-zone"><button class="btn btn-danger" id="btn-delete">Delete Table</button></div>` : ""}
     <div style="height:80px"></div>
     <button class="fab" id="btn-save" title="Save">✓</button>`;
+
+  // Re-renders the live schedule preview from current form values
+  function refreshPreview() {
+    const t = document.getElementById("f-type").value;
+    const params = readParams(t);
+    renderSchedulePreview(
+      document.getElementById("schedule-preview"),
+      t,
+      params,
+    );
+  }
 
   function renderTypeFields(t) {
     const p = table?.params || {};
@@ -756,67 +886,87 @@ function renderEdit(main, id) {
       el.innerHTML = `
         <div class="form-group">
           <label class="form-label">Rounds</label>
-          <input class="form-input" id="f-rounds" type="number" min="1" max="30" value="${p.rounds || 8}">
+          ${stepperHtml("f-rounds", { value: p.rounds || 8, min: 1, max: 30, step: 1 })}
         </div>
         <div class="form-group">
           <label class="form-label">Breath Hold (fixed)</label>
-          ${timePairHtml("f-holdTime", p.holdTime ?? 90)}
+          ${timeStepperHtml("f-holdTime", p.holdTime ?? 90)}
         </div>
         <div class="form-group">
           <label class="form-label">Starting Breathe Time</label>
-          ${timePairHtml("f-startRest", p.startRest ?? 120)}
+          ${timeStepperHtml("f-startRest", p.startRest ?? 120)}
         </div>
         <div class="form-group">
-          <label class="form-label">Breathe Decrement per Round (sec)</label>
-          <input class="form-input" id="f-restDecrement" type="number" min="0" max="120" value="${p.restDecrement ?? 15}">
+          <label class="form-label">Breathe Decrement per Round</label>
+          ${stepperHtml("f-restDecrement", { value: p.restDecrement ?? 15, min: 0, max: 120, step: 5 })}
         </div>`;
+      wireStepper("f-rounds", { onChange: refreshPreview });
+      wireTimeStepper("f-holdTime", { onChange: refreshPreview });
+      wireTimeStepper("f-startRest", { onChange: refreshPreview });
+      wireStepper("f-restDecrement", { onChange: refreshPreview });
     } else if (t === "o2") {
       el.innerHTML = `
         <div class="form-group">
           <label class="form-label">Rounds</label>
-          <input class="form-input" id="f-rounds" type="number" min="1" max="30" value="${p.rounds || 8}">
+          ${stepperHtml("f-rounds", { value: p.rounds || 8, min: 1, max: 30, step: 1 })}
         </div>
         <div class="form-group">
           <label class="form-label">Starting Hold Time</label>
-          ${timePairHtml("f-startHold", p.startHold ?? 60)}
+          ${timeStepperHtml("f-startHold", p.startHold ?? 60)}
         </div>
         <div class="form-group">
-          <label class="form-label">Hold Increment per Round (sec)</label>
-          <input class="form-input" id="f-holdIncrement" type="number" min="0" max="120" value="${p.holdIncrement ?? 15}">
+          <label class="form-label">Hold Increment per Round</label>
+          ${stepperHtml("f-holdIncrement", { value: p.holdIncrement ?? 15, min: 0, max: 120, step: 5 })}
         </div>
         <div class="form-group">
           <label class="form-label">Breathe Time (fixed)</label>
-          ${timePairHtml("f-restTime", p.restTime ?? 120)}
+          ${timeStepperHtml("f-restTime", p.restTime ?? 120)}
         </div>`;
+      wireStepper("f-rounds", { onChange: refreshPreview });
+      wireTimeStepper("f-startHold", { onChange: refreshPreview });
+      wireStepper("f-holdIncrement", { onChange: refreshPreview });
+      wireTimeStepper("f-restTime", { onChange: refreshPreview });
     } else if (t === "wonka") {
       el.innerHTML = `
         <div class="form-group">
           <label class="form-label">Number of Breathholds</label>
-          <input class="form-input" id="f-breathholds" type="number" min="1" max="30" value="${p.breathholds || 5}">
+          ${stepperHtml("f-breathholds", { value: p.breathholds || 5, min: 1, max: 30, step: 1 })}
         </div>
         <div class="form-group">
           <label class="form-label">Hold After 1st Contraction</label>
-          ${timePairHtml("f-countdownAfterContraction", p.countdownAfterContraction ?? 30)}
+          ${timeStepperHtml("f-countdownAfterContraction", p.countdownAfterContraction ?? 30)}
         </div>`;
+      wireStepper("f-breathholds", { onChange: refreshPreview });
+      wireTimeStepper("f-countdownAfterContraction", { onChange: refreshPreview });
     } else if (t === "custom") {
       const rounds =
         p.rounds && p.rounds.length > 0 ? p.rounds : [{ hold: 90, rest: 120 }];
       renderCustomRounds(el, rounds);
     }
+
+    refreshPreview();
   }
 
   function renderCustomRounds(container, rounds) {
     const rows = rounds
       .map(
         (r, i) => `
-      <div class="round-row">
+      <div class="round-row" data-idx="${i}">
         <span class="round-num">${i + 1}</span>
-        <span class="round-label">Hold</span>
-        <input class="round-time" type="text" value="${fmtTime(r.hold)}" placeholder="1:30">
-        <span class="round-label" style="margin-left:6px">Breathe</span>
-        <input class="round-time" type="text" value="${fmtTime(r.rest)}" placeholder="2:00">
-        <span class="round-sep"></span>
-        <button type="button" class="btn-remove" data-idx="${i}" title="Remove">✕</button>
+        <div class="round-fields">
+          <div class="round-field">
+            <span class="round-label">Hold</span>
+            ${timeStepperHtml(`row-hold-${i}`, r.hold, { compact: true })}
+          </div>
+          <div class="round-field">
+            <span class="round-label">Rest</span>
+            ${timeStepperHtml(`row-rest-${i}`, r.rest, { compact: true })}
+          </div>
+        </div>
+        <div class="round-actions">
+          <button type="button" class="btn-row-action" data-action="dup" data-idx="${i}" title="Duplicate" aria-label="Duplicate">⎘</button>
+          <button type="button" class="btn-row-action" data-action="rm" data-idx="${i}" title="Remove" aria-label="Remove" ${rounds.length <= 1 ? "disabled" : ""}>✕</button>
+        </div>
       </div>`,
       )
       .join("");
@@ -828,6 +978,11 @@ function renderEdit(main, id) {
         <button type="button" class="btn-add-round" id="btn-add-round">+ Add Round</button>
       </div>`;
 
+    rounds.forEach((_, i) => {
+      wireTimeStepper(`row-hold-${i}`, { onChange: refreshPreview });
+      wireTimeStepper(`row-rest-${i}`, { onChange: refreshPreview });
+    });
+
     document.getElementById("btn-add-round").addEventListener("click", () => {
       const current = readCustomRounds();
       const last = current[current.length - 1] || { hold: 90, rest: 120 };
@@ -835,14 +990,21 @@ function renderEdit(main, id) {
         ...current,
         { hold: last.hold, rest: last.rest },
       ]);
+      refreshPreview();
     });
 
-    container.querySelectorAll(".btn-remove").forEach((btn) => {
+    container.querySelectorAll(".btn-row-action").forEach((btn) => {
       btn.addEventListener("click", () => {
+        const idx = parseInt(btn.dataset.idx);
         const current = readCustomRounds();
-        if (current.length <= 1) return;
-        current.splice(parseInt(btn.dataset.idx), 1);
+        if (btn.dataset.action === "rm") {
+          if (current.length <= 1) return;
+          current.splice(idx, 1);
+        } else if (btn.dataset.action === "dup") {
+          current.splice(idx + 1, 0, { ...current[idx] });
+        }
         renderCustomRounds(container, current);
+        refreshPreview();
       });
     });
   }
@@ -851,12 +1013,38 @@ function renderEdit(main, id) {
     return Array.from(
       document.querySelectorAll("#rounds-editor .round-row"),
     ).map((row) => {
-      const inputs = row.querySelectorAll(".round-time");
+      const idx = row.dataset.idx;
       return {
-        hold: parseTimeStr(inputs[0]?.value),
-        rest: parseTimeStr(inputs[1]?.value),
+        hold: getTimeStepper(`row-hold-${idx}`),
+        rest: getTimeStepper(`row-rest-${idx}`),
       };
     });
+  }
+
+  function readParams(t) {
+    if (t === "co2") {
+      return {
+        rounds: getStepper("f-rounds") || 8,
+        holdTime: getTimeStepper("f-holdTime"),
+        startRest: getTimeStepper("f-startRest"),
+        restDecrement: getStepper("f-restDecrement"),
+      };
+    }
+    if (t === "o2") {
+      return {
+        rounds: getStepper("f-rounds") || 8,
+        startHold: getTimeStepper("f-startHold"),
+        holdIncrement: getStepper("f-holdIncrement"),
+        restTime: getTimeStepper("f-restTime"),
+      };
+    }
+    if (t === "wonka") {
+      return {
+        breathholds: getStepper("f-breathholds") || 5,
+        countdownAfterContraction: getTimeStepper("f-countdownAfterContraction"),
+      };
+    }
+    return { rounds: readCustomRounds() };
   }
 
   renderTypeFields(type);
@@ -871,34 +1059,7 @@ function renderEdit(main, id) {
       return;
     }
     const t = document.getElementById("f-type").value;
-
-    let params;
-    if (t === "co2") {
-      params = {
-        rounds: parseInt(document.getElementById("f-rounds").value) || 8,
-        holdTime: getTimePair("f-holdTime"),
-        startRest: getTimePair("f-startRest"),
-        restDecrement:
-          parseInt(document.getElementById("f-restDecrement").value) || 0,
-      };
-    } else if (t === "o2") {
-      params = {
-        rounds: parseInt(document.getElementById("f-rounds").value) || 8,
-        startHold: getTimePair("f-startHold"),
-        holdIncrement:
-          parseInt(document.getElementById("f-holdIncrement").value) || 0,
-        restTime: getTimePair("f-restTime"),
-      };
-    } else if (t === "wonka") {
-      params = {
-        breathholds:
-          parseInt(document.getElementById("f-breathholds").value) || 5,
-        countdownAfterContraction: getTimePair("f-countdownAfterContraction"),
-      };
-    } else {
-      params = { rounds: readCustomRounds() };
-    }
-
+    const params = readParams(t);
     db.saveTable({ id: table?.id || uid(), name, type: t, params });
     navigate("tables");
   });
@@ -911,6 +1072,79 @@ function renderEdit(main, id) {
       }
     });
   }
+}
+
+// ─────────────────────────────────────────────
+// Schedule preview
+// ─────────────────────────────────────────────
+function buildPreviewRounds(type, p) {
+  if (type === "co2") {
+    const n = p.rounds || 0;
+    return Array.from({ length: n }, (_, i) => ({
+      hold: p.holdTime,
+      rest:
+        i < n - 1 ? Math.max(10, (p.startRest || 0) - i * (p.restDecrement || 0)) : null,
+    }));
+  }
+  if (type === "o2") {
+    const n = p.rounds || 0;
+    return Array.from({ length: n }, (_, i) => ({
+      hold: (p.startHold || 0) + i * (p.holdIncrement || 0),
+      rest: i < n - 1 ? p.restTime : null,
+    }));
+  }
+  if (type === "wonka") {
+    const n = p.breathholds || 0;
+    return Array.from({ length: n }, () => ({
+      hold: null,
+      rest: null,
+      countdown: p.countdownAfterContraction,
+    }));
+  }
+  if (type === "custom") {
+    const n = (p.rounds || []).length;
+    return (p.rounds || []).map((r, i) => ({
+      hold: r.hold,
+      rest: i < n - 1 ? r.rest : null,
+    }));
+  }
+  return [];
+}
+
+function renderSchedulePreview(container, type, params) {
+  const rounds = buildPreviewRounds(type, params);
+  if (!rounds.length) {
+    container.innerHTML = "";
+    return;
+  }
+  const total = rounds.reduce(
+    (sum, r) => sum + (r.hold || 0) + (r.rest || 0) + (r.countdown || 0),
+    0,
+  );
+  let summary;
+  if (type === "wonka") {
+    summary = `${rounds.length} breathholds · countdown ${fmtTime(rounds[0].countdown || 0)}`;
+  } else {
+    summary = `${rounds.length} rounds · total ${fmtTime(total)}`;
+  }
+  const chips = rounds
+    .map((r, i) => {
+      if (type === "wonka") {
+        return `<div class="schedule-chip">
+          <span class="sc-num">${i + 1}</span>
+          <span class="sc-hold">hold + ${fmtTime(r.countdown)}</span>
+        </div>`;
+      }
+      return `<div class="schedule-chip">
+        <span class="sc-num">${i + 1}</span>
+        <span class="sc-hold">${fmtTime(r.hold)}</span>
+        ${r.rest != null ? `<span class="sc-rest">${fmtTime(r.rest)}</span>` : ""}
+      </div>`;
+    })
+    .join("");
+  container.innerHTML = `
+    <div class="schedule-summary">${summary}</div>
+    <div class="schedule-strip">${chips}</div>`;
 }
 
 // ─────────────────────────────────────────────
