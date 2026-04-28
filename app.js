@@ -63,6 +63,10 @@ function parseTimeStr(str) {
   return parseInt(str) || 0;
 }
 
+function track(name, props) {
+  if (typeof umami !== "undefined") umami.track(name, props);
+}
+
 function fmtDate(iso) {
   const d = new Date(iso);
   return (
@@ -531,6 +535,11 @@ function navigate(view, params = {}) {
   btnBack.onclick = () => {
     if (view === "session" && currentSession) {
       if (!confirm("Stop the current session?")) return;
+      track("session_abandon", {
+        type: currentSession.table.type,
+        completed_rounds: currentSession.completedRounds,
+        total_rounds: currentSession.totalRounds,
+      });
       currentSession.stop();
       currentSession = null;
     }
@@ -1057,6 +1066,7 @@ function renderEdit(main, id) {
     }
     const t = document.getElementById("f-type").value;
     const params = readParams(t);
+    track("table_save", { type: t, is_new: !table });
     db.saveTable({ id: table?.id || uid(), name, type: t, params });
     navigate("tables");
   });
@@ -1192,6 +1202,11 @@ function renderSession(main, tableId) {
       onTick: updateUI,
       onPhaseChange: updateUI,
       onComplete: ({ completedRounds, totalRounds, duration }) => {
+        track("session_complete", {
+          type: table.type,
+          rounds: completedRounds,
+          duration_s: duration,
+        });
         main.innerHTML = `
           <div class="session-complete">
             <div class="checkmark">✓</div>
@@ -1225,12 +1240,20 @@ function renderSession(main, tableId) {
 
     document.getElementById("btn-stop").addEventListener("click", () => {
       if (confirm("Stop the session?")) {
-        currentSession?.stop();
-        currentSession = null;
+        if (currentSession) {
+          track("session_abandon", {
+            type: currentSession.table.type,
+            completed_rounds: currentSession.completedRounds,
+            total_rounds: currentSession.totalRounds,
+          });
+          currentSession.stop();
+          currentSession = null;
+        }
         navigate("tables");
       }
     });
 
+    track("session_start", { type: table.type, rounds: currentSession.totalRounds });
     currentSession.start();
   }
 
