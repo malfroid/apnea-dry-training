@@ -897,7 +897,7 @@ function renderTables(main) {
     });
   });
 
-  main.querySelectorAll(".card-row").forEach((row) => {
+  main.querySelectorAll(".card-row[data-id]").forEach((row) => {
     // tap → start session
     row.addEventListener("click", () =>
       navigate("session", { tableId: row.dataset.id }),
