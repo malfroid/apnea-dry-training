@@ -12,6 +12,11 @@
             content="black-translucent"
         />
         <meta name="theme-color" content="#0f1923" />
+        <meta name="apple-mobile-web-app-title" content="Apnea" />
+        <link rel="manifest" href="manifest.webmanifest" />
+        <link rel="apple-touch-icon" href="icons/icon-192.png" />
+        <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png" />
+        <link rel="icon" type="image/png" sizes="512x512" href="icons/icon-512.png" />
         <title>Apnea Dry Training</title>
         <script>
             (function () {
@@ -108,6 +113,15 @@
                 s.src = "app.js" + (v ? "?v=" + v : "");
                 document.body.appendChild(s);
             })();
+        </script>
+        <script>
+            if ("serviceWorker" in navigator) {
+                window.addEventListener("load", function () {
+                    navigator.serviceWorker
+                        .register("sw.js")
+                        .catch(function () {});
+                });
+            }
         </script>
     </body>
 </html>

@@ -132,6 +132,11 @@ main {
     border-color: #f0c070;
     color: #f0c070;
 }
+.icon-max-hold {
+    border-color: #e07b9a;
+    color: #e07b9a;
+    font-size: 1.2rem;
+}
 
 .table-info {
     flex: 1;
@@ -514,6 +519,29 @@ select.form-input {
     margin-top: 32px;
     padding-top: 20px;
     border-top: 1px solid var(--border);
+}
+
+.data-zone {
+    margin-top: 32px;
+    padding-top: 20px;
+    border-top: 1px solid var(--border);
+}
+.settings-section-title {
+    color: var(--text2);
+    font-size: 0.72rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+    margin-bottom: 12px;
+    text-align: center;
+}
+.data-buttons {
+    display: flex;
+    gap: 10px;
+}
+.data-buttons .btn {
+    flex: 1;
+    margin-top: 0;
 }
 
 /* ── Settings ── */

@@ -39,7 +39,72 @@ const db = {
       if (key.startsWith("apnea_")) localStorage.removeItem(key);
     }
   },
+  exportAll() {
+    const data = {};
+    for (const key of Object.keys(localStorage)) {
+      if (key.startsWith("apnea_")) data[key] = localStorage.getItem(key);
+    }
+    return {
+      schemaVersion: 1,
+      exportedAt: new Date().toISOString(),
+      app: "apnea-dry-training",
+      data,
+    };
+  },
+  importAll(payload, mode) {
+    if (
+      !payload ||
+      payload.app !== "apnea-dry-training" ||
+      typeof payload.data !== "object"
+    ) {
+      throw new Error("Invalid backup file");
+    }
+    const incoming = payload.data;
+    if (mode === "replace") {
+      this.clearAllData();
+      for (const [k, v] of Object.entries(incoming)) {
+        if (k.startsWith("apnea_") && typeof v === "string") {
+          localStorage.setItem(k, v);
+        }
+      }
+      return;
+    }
+    for (const [k, v] of Object.entries(incoming)) {
+      if (!k.startsWith("apnea_") || typeof v !== "string") continue;
+      if (k === "apnea_tables" || k === "apnea_sessions") {
+        const existing = JSON.parse(localStorage.getItem(k) || "[]");
+        const seen = new Set(existing.map((x) => x.id));
+        const incomingArr = JSON.parse(v || "[]");
+        for (const item of incomingArr) {
+          if (!seen.has(item.id)) existing.push(item);
+        }
+        localStorage.setItem(k, JSON.stringify(existing));
+      } else if (localStorage.getItem(k) === null) {
+        localStorage.setItem(k, v);
+      }
+    }
+  },
+  countItems(payload) {
+    const data = payload?.data || {};
+    const tables = JSON.parse(data.apnea_tables || "[]").length;
+    const sessions = JSON.parse(data.apnea_sessions || "[]").length;
+    return { tables, sessions };
+  },
 };
+
+function downloadJson(payload, filename) {
+  const blob = new Blob([JSON.stringify(payload, null, 2)], {
+    type: "application/json",
+  });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 100);
+}
 
 // ─────────────────────────────────────────────
 // Utils
@@ -123,6 +188,12 @@ const settings = {
   },
   set relaxationSound(v) {
     localStorage.setItem("apnea_relax_sound", v);
+  },
+  get vibrationEnabled() {
+    return localStorage.getItem("apnea_vibration") === "true";
+  },
+  set vibrationEnabled(v) {
+    localStorage.setItem("apnea_vibration", v ? "true" : "false");
   },
 };
 
@@ -211,18 +282,77 @@ document.addEventListener("pointerdown", tryUnlockAudio, { once: true });
 document.addEventListener("touchstart", tryUnlockAudio, { once: true });
 document.addEventListener("keydown", tryUnlockAudio, { once: true });
 
+function generateNoiseBuffer(ctx, kind) {
+  const seconds = 5;
+  const length = ctx.sampleRate * seconds;
+  const buffer = ctx.createBuffer(1, length, ctx.sampleRate);
+  const data = buffer.getChannelData(0);
+  if (kind === "pink") {
+    // Voss-McCartney pink-noise approximation (Paul Kellet's method)
+    let b0 = 0, b1 = 0, b2 = 0, b3 = 0, b4 = 0, b5 = 0, b6 = 0;
+    for (let i = 0; i < length; i++) {
+      const white = Math.random() * 2 - 1;
+      b0 = 0.99886 * b0 + white * 0.0555179;
+      b1 = 0.99332 * b1 + white * 0.0750759;
+      b2 = 0.96900 * b2 + white * 0.1538520;
+      b3 = 0.86650 * b3 + white * 0.3104856;
+      b4 = 0.55000 * b4 + white * 0.5329522;
+      b5 = -0.7616 * b5 - white * 0.0168980;
+      data[i] = (b0 + b1 + b2 + b3 + b4 + b5 + b6 + white * 0.5362) * 0.11;
+      b6 = white * 0.115926;
+    }
+  } else {
+    // Brown noise: integrate white noise with mild leak
+    let last = 0;
+    for (let i = 0; i < length; i++) {
+      const white = Math.random() * 2 - 1;
+      last = (last + 0.02 * white) / 1.02;
+      data[i] = last * 3.5;
+    }
+  }
+  return buffer;
+}
+
+function createRelaxPlayer(name) {
+  if (name === "pink" || name === "brown") {
+    const ctx = getAudioCtx();
+    if (ctx.state === "suspended") ctx.resume();
+    const source = ctx.createBufferSource();
+    source.buffer = generateNoiseBuffer(ctx, name);
+    source.loop = true;
+    const gain = ctx.createGain();
+    gain.gain.value = 0.4;
+    source.connect(gain);
+    gain.connect(ctx.destination);
+    source.start();
+    return {
+      stop() {
+        try { source.stop(); } catch {}
+        source.disconnect();
+        gain.disconnect();
+      },
+    };
+  }
+  const audio = new Audio(`audio/sounds/${name}.mp3`);
+  audio.loop = true;
+  audio.volume = 0.4;
+  audio.play().catch(() => {});
+  return {
+    stop() {
+      audio.pause();
+    },
+  };
+}
+
 let _relaxSound = null;
 function startRelaxSound() {
   const name = settings.relaxationSound;
   if (name === "none") return;
-  _relaxSound = new Audio(`audio/sounds/${name}.mp3`);
-  _relaxSound.loop = true;
-  _relaxSound.volume = 0.4;
-  _relaxSound.play().catch(() => {});
+  _relaxSound = createRelaxPlayer(name);
 }
 function stopRelaxSound() {
   if (!_relaxSound) return;
-  _relaxSound.pause();
+  _relaxSound.stop();
   _relaxSound = null;
 }
 
@@ -277,6 +407,47 @@ function speak(key, thenKey = null) {
   audio.onended = thenKey ? () => speak(thenKey) : null;
   audio.play().catch(() => {});
 }
+
+// ─────────────────────────────────────────────
+// Wake lock + vibration
+// ─────────────────────────────────────────────
+let _wakeLock = null;
+let _wakeLockWanted = false;
+
+async function acquireWakeLock() {
+  _wakeLockWanted = true;
+  if (!navigator.wakeLock) return;
+  try {
+    _wakeLock = await navigator.wakeLock.request("screen");
+    _wakeLock.addEventListener("release", () => {
+      _wakeLock = null;
+    });
+  } catch {}
+}
+
+function releaseWakeLock() {
+  _wakeLockWanted = false;
+  if (_wakeLock) {
+    _wakeLock.release().catch(() => {});
+    _wakeLock = null;
+  }
+}
+
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "visible" && _wakeLockWanted && !_wakeLock) {
+    acquireWakeLock();
+  }
+});
+
+function vibrate(pattern) {
+  if (!settings.vibrationEnabled) return;
+  if (!navigator.vibrate) return;
+  navigator.vibrate(pattern);
+}
+
+const VIBRATE_HOLD = 400;
+const VIBRATE_REST = [120, 80, 120];
+const VIBRATE_COMPLETE = [200, 100, 200, 100, 400];
 
 // ─────────────────────────────────────────────
 // Session Engine
@@ -359,6 +530,7 @@ class SessionEngine {
   }
 
   start() {
+    acquireWakeLock();
     this._enter(0);
   }
 
@@ -372,6 +544,9 @@ class SessionEngine {
 
     this.phaseIdx = idx;
     const ph = this.phases[idx];
+
+    if (ph.kind === "hold") vibrate(VIBRATE_HOLD);
+    else if (ph.kind === "breathe" || ph.kind === "breath") vibrate(VIBRATE_REST);
 
     if (ph.countUp) {
       this.elapsed = 0;
@@ -445,13 +620,16 @@ class SessionEngine {
   stop() {
     clearInterval(this.timer);
     stopRelaxSound();
+    releaseWakeLock();
     this._persist(false);
   }
 
   _complete() {
     clearInterval(this.timer);
     stopRelaxSound();
+    releaseWakeLock();
     speak("complete");
+    vibrate(VIBRATE_COMPLETE);
     this._persist(true);
     this.onComplete(this._state());
   }
@@ -510,6 +688,7 @@ class SessionEngine {
 // App state
 // ─────────────────────────────────────────────
 let currentSession = null;
+let _maxHoldActive = null;
 
 // ─────────────────────────────────────────────
 // Router
@@ -528,7 +707,8 @@ function navigate(view, params = {}) {
   btnHist.style.pointerEvents = view !== "tables" ? "none" : "";
   btnSettings.style.visibility = view !== "tables" ? "hidden" : "";
   btnSettings.style.pointerEvents = view !== "tables" ? "none" : "";
-  const showSound = view === "tables" || view === "session";
+  const showSound =
+    view === "tables" || view === "session" || view === "max_hold";
   btnSound.style.visibility = showSound ? "" : "hidden";
   btnSound.style.pointerEvents = showSound ? "" : "none";
 
@@ -542,6 +722,11 @@ function navigate(view, params = {}) {
       });
       currentSession.stop();
       currentSession = null;
+    }
+    if (view === "max_hold" && _maxHoldActive) {
+      if (!confirm("End max breath-hold without saving?")) return;
+      _maxHoldActive.abandon();
+      _maxHoldActive = null;
     }
     navigate("tables");
   };
@@ -568,6 +753,10 @@ function navigate(view, params = {}) {
       title.textContent = "Settings";
       renderSettings(main);
       break;
+    case "max_hold":
+      title.textContent = "Max Breath-Hold";
+      renderMaxHold(main);
+      break;
   }
 }
 
@@ -575,12 +764,19 @@ function navigate(view, params = {}) {
 // View helpers
 // ─────────────────────────────────────────────
 function typeIcon(type) {
-  const labels = { co2: "CO₂", o2: "O₂", wonka: "W", custom: "···" };
+  const labels = {
+    co2: "CO₂",
+    o2: "O₂",
+    wonka: "W",
+    custom: "···",
+    "max-hold": "∞",
+  };
   const cls = {
     co2: "icon-co2",
     o2: "icon-o2",
     wonka: "icon-wonka",
     custom: "icon-custom",
+    "max-hold": "icon-max-hold",
   };
   return `<div class="table-icon ${cls[type] || ""}">${labels[type] || "?"}</div>`;
 }
@@ -641,15 +837,27 @@ function nextLabel(next) {
 // ─────────────────────────────────────────────
 function renderTables(main) {
   const tables = db.getTables();
-  let html = "";
+
+  const maxHoldCard =
+    `<div class="card">
+      <div class="card-row card-row-maxhold" id="row-max-hold">
+        ${typeIcon("max-hold")}
+        <div class="table-info">
+          <div class="table-name">Max breath-hold</div>
+          <div class="table-meta">Open-ended hold, log your time</div>
+        </div>
+      </div>
+    </div>`;
+
+  let html = maxHoldCard;
 
   if (tables.length === 0) {
-    html = `<div class="empty-state">
+    html += `<div class="empty-state">
       <h3>No tables yet</h3>
       <p>Tap + to create your first training table.</p>
     </div>`;
   } else {
-    html =
+    html +=
       `<div class="card">` +
       tables
         .map(
@@ -673,6 +881,10 @@ function renderTables(main) {
     html +
     `<div class="list-bottom-pad"></div>` +
     `<button class="fab" id="btn-new" title="New table">+</button>`;
+
+  document
+    .getElementById("row-max-hold")
+    .addEventListener("click", () => navigate("max_hold"));
 
   main.querySelectorAll(".btn-delete-row").forEach((btn) => {
     btn.addEventListener("click", (e) => {
@@ -1320,6 +1532,133 @@ function renderSession(main, tableId) {
 }
 
 // ─────────────────────────────────────────────
+// View: Max breath-hold
+// ─────────────────────────────────────────────
+function renderMaxHold(main) {
+  let elapsed = 0;
+  let firstContractionAt = null;
+  let timerHandle = null;
+  let startTime = null;
+  let saved = false;
+
+  function cleanup() {
+    if (timerHandle) {
+      clearInterval(timerHandle);
+      timerHandle = null;
+    }
+    releaseWakeLock();
+    _maxHoldActive = null;
+  }
+
+  function showStart() {
+    main.innerHTML = `
+      <div class="session-start-screen">
+        <div class="start-icon">${typeIcon("max-hold")}</div>
+        <h2>Max breath-hold</h2>
+        <p>A simple stopwatch. Inhale fully, then start. Tap "First contraction" when you feel a diaphragm spasm. Tap "Stop" to end and log your time.</p>
+        <div class="start-meta">Dry training only. Never alone, never near water.</div>
+        <button class="btn btn-primary" id="btn-start-session">Start</button>
+      </div>`;
+    document
+      .getElementById("btn-start-session")
+      .addEventListener("click", showActive);
+  }
+
+  function showActive() {
+    startTime = Date.now();
+    elapsed = 0;
+    firstContractionAt = null;
+    saved = false;
+
+    main.innerHTML = `
+      <div class="session-wrap">
+        <div class="session-round"></div>
+        <div class="session-phase phase-hold">Hold</div>
+        <div class="session-timer" id="mh-timer">0:00</div>
+        <div class="session-next" id="mh-info"></div>
+        <button class="btn-contraction" id="btn-contraction">First Contraction</button>
+        <div class="session-controls">
+          <button class="btn btn-danger" id="btn-stop">Stop</button>
+        </div>
+      </div>`;
+
+    _maxHoldActive = { abandon: cleanup };
+    acquireWakeLock();
+    vibrate(VIBRATE_HOLD);
+    track("session_start", { type: "max-hold" });
+
+    timerHandle = setInterval(() => {
+      elapsed = Math.floor((Date.now() - startTime) / 1000);
+      const t = document.getElementById("mh-timer");
+      if (t) t.textContent = fmtTime(elapsed);
+    }, 200);
+
+    document
+      .getElementById("btn-contraction")
+      .addEventListener("click", () => {
+        if (firstContractionAt !== null) return;
+        firstContractionAt = Math.floor((Date.now() - startTime) / 1000);
+        const btn = document.getElementById("btn-contraction");
+        btn.textContent = `Contraction at ${fmtTime(firstContractionAt)}`;
+        btn.disabled = true;
+        vibrate(80);
+      });
+
+    document.getElementById("btn-stop").addEventListener("click", () => {
+      if (!confirm("End max breath-hold?")) return;
+      finish();
+    });
+  }
+
+  function finish() {
+    if (saved) return;
+    saved = true;
+    const duration = Math.floor((Date.now() - startTime) / 1000);
+    if (timerHandle) {
+      clearInterval(timerHandle);
+      timerHandle = null;
+    }
+    releaseWakeLock();
+    speak("complete");
+    vibrate(VIBRATE_COMPLETE);
+    db.saveSession({
+      id: uid(),
+      tableId: "max-hold",
+      tableName: "Max breath-hold",
+      tableType: "max-hold",
+      date: new Date().toISOString(),
+      completedRounds: 1,
+      totalRounds: 1,
+      totalDuration: duration,
+      completed: true,
+      firstContractionAt,
+    });
+    track("session_complete", { type: "max-hold", duration_s: duration });
+    _maxHoldActive = null;
+    showComplete(duration);
+  }
+
+  function showComplete(duration) {
+    const contractionLine =
+      firstContractionAt != null
+        ? `First contraction at ${fmtTime(firstContractionAt)}.<br>`
+        : "";
+    main.innerHTML = `
+      <div class="session-complete">
+        <div class="checkmark">✓</div>
+        <h2>${fmtTime(duration)} hold</h2>
+        <p>${contractionLine}Saved to history.</p>
+        <button class="btn btn-primary" id="btn-done">Done</button>
+      </div>`;
+    document
+      .getElementById("btn-done")
+      .addEventListener("click", () => navigate("tables"));
+  }
+
+  showStart();
+}
+
+// ─────────────────────────────────────────────
 // View: History
 // ─────────────────────────────────────────────
 function renderHistory(main) {
@@ -1335,6 +1674,23 @@ function renderHistory(main) {
 
   const rows = sessions
     .map((s) => {
+      if (s.tableType === "max-hold") {
+        const contraction =
+          s.firstContractionAt != null
+            ? `<span class="dot">·</span>first contraction ${fmtTime(s.firstContractionAt)}`
+            : "";
+        return `
+        <div class="history-item">
+          <div class="history-top">
+            <span class="history-name">${fmtTime(s.totalDuration)} hold</span>
+            <span class="history-date">${fmtDate(s.date)}</span>
+          </div>
+          <div class="history-meta">
+            <span class="badge-ok">Max breath-hold</span>
+            ${contraction}
+          </div>
+        </div>`;
+      }
       const badge = s.completed
         ? `<span class="badge-ok">✓ Complete</span>`
         : `<span class="badge-partial">${s.completedRounds}/${s.totalRounds} rounds</span>`;
@@ -1387,6 +1743,16 @@ function renderSettings(main) {
         </div>
         <label class="switch">
           <input type="checkbox" id="toggle-voice" ${settings.voiceEnabled ? "checked" : ""}>
+          <span class="slider round"></span>
+        </label>
+      </div>
+      <div class="settings-row">
+        <div class="settings-label">
+          <div class="settings-title">Vibration cues</div>
+          <div class="settings-desc">Buzzes on hold start, rest, and completion</div>
+        </div>
+        <label class="switch">
+          <input type="checkbox" id="toggle-vibration" ${settings.vibrationEnabled ? "checked" : ""}>
           <span class="slider round"></span>
         </label>
       </div>
@@ -1445,8 +1811,20 @@ function renderSettings(main) {
           <option value="waves" ${settings.relaxationSound === "waves" ? "selected" : ""}>Waves</option>
           <option value="forest" ${settings.relaxationSound === "forest" ? "selected" : ""}>Forest</option>
           <option value="campfire" ${settings.relaxationSound === "campfire" ? "selected" : ""}>Campfire</option>
+          <option value="pink" ${settings.relaxationSound === "pink" ? "selected" : ""}>Pink noise</option>
+          <option value="brown" ${settings.relaxationSound === "brown" ? "selected" : ""}>Brown noise</option>
         </select>
       </div>
+    </div>
+
+    <div class="data-zone" style="margin-top: 40px">
+      <h3 class="settings-section-title">Data</h3>
+      <div class="data-buttons">
+        <button class="btn btn-secondary" id="btn-export-data">Export backup</button>
+        <button class="btn btn-secondary" id="btn-import-data">Import backup…</button>
+      </div>
+      <input type="file" id="file-import" accept="application/json" hidden>
+      <p class="settings-help">Save a JSON file with all tables, sessions, and preferences — or restore from one.</p>
     </div>
 
     <div class="delete-zone" style="margin-top: 40px">
@@ -1480,6 +1858,11 @@ function renderSettings(main) {
     settings.voiceEnabled = e.target.checked;
     updateAudioRowsVisibility();
     updateSoundBtn();
+  });
+
+  document.getElementById("toggle-vibration").addEventListener("change", (e) => {
+    settings.vibrationEnabled = e.target.checked;
+    if (e.target.checked) vibrate(80);
   });
 
   document
@@ -1518,7 +1901,7 @@ function renderSettings(main) {
     .addEventListener("change", (e) => {
       settings.relaxationSound = e.target.value;
       if (_soundPreview) {
-        _soundPreview.pause();
+        _soundPreview.stop();
         _soundPreview = null;
       }
       if (_soundPreviewTimer) {
@@ -1526,16 +1909,60 @@ function renderSettings(main) {
         _soundPreviewTimer = null;
       }
       if (settings.relaxationSound === "none") return;
-      _soundPreview = new Audio(`audio/sounds/${settings.relaxationSound}.mp3`);
-      _soundPreview.volume = 0.4;
-      _soundPreview.play().catch(() => {});
+      _soundPreview = createRelaxPlayer(settings.relaxationSound);
       _soundPreviewTimer = setTimeout(() => {
         if (_soundPreview) {
-          _soundPreview.pause();
+          _soundPreview.stop();
           _soundPreview = null;
         }
       }, 3000);
     });
+
+  document.getElementById("btn-export-data").addEventListener("click", () => {
+    const payload = db.exportAll();
+    const date = new Date().toISOString().slice(0, 10);
+    downloadJson(payload, `apnea-backup-${date}.json`);
+  });
+
+  const fileImport = document.getElementById("file-import");
+  document.getElementById("btn-import-data").addEventListener("click", () => {
+    fileImport.value = "";
+    fileImport.click();
+  });
+  fileImport.addEventListener("change", async () => {
+    const file = fileImport.files?.[0];
+    if (!file) return;
+    let payload;
+    try {
+      payload = JSON.parse(await file.text());
+    } catch {
+      alert("Could not read that file. Is it a valid JSON backup?");
+      return;
+    }
+    if (
+      !payload ||
+      payload.app !== "apnea-dry-training" ||
+      typeof payload.data !== "object"
+    ) {
+      alert("That file isn't an Apnea Dry Training backup.");
+      return;
+    }
+    const { tables, sessions } = db.countItems(payload);
+    const choice = prompt(
+      `Backup contains ${tables} table(s) and ${sessions} session(s).\n\n` +
+        `Type "replace" to overwrite all current data, or "merge" to add only new items. ` +
+        `Anything else cancels.`,
+    );
+    const mode = choice?.trim().toLowerCase();
+    if (mode !== "replace" && mode !== "merge") return;
+    try {
+      db.importAll(payload, mode);
+    } catch (err) {
+      alert("Import failed: " + err.message);
+      return;
+    }
+    location.href = location.pathname;
+  });
 
   document.getElementById("btn-delete-all").addEventListener("click", () => {
     if (
@@ -1548,7 +1975,17 @@ function renderSettings(main) {
     }
   });
 
-  document.getElementById("btn-reload-assets").addEventListener("click", () => {
+  document.getElementById("btn-reload-assets").addEventListener("click", async () => {
+    try {
+      if ("serviceWorker" in navigator) {
+        const regs = await navigator.serviceWorker.getRegistrations();
+        await Promise.all(regs.map((r) => r.unregister()));
+      }
+      if ("caches" in window) {
+        const keys = await caches.keys();
+        await Promise.all(keys.map((k) => caches.delete(k)));
+      }
+    } catch {}
     location.href = "?v=" + Date.now();
   });
 }
